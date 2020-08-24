@@ -67,6 +67,8 @@ class LocalFileSystem {
      */
     virtual int Init(const LocalFileSystemOption& option) = 0;
 
+    virtual int Uninit() = 0;
+
     /**
      * 获取文件或目录所在的文件系统状态信息
      * @param path: 要获取的文件系统下的文件或目录路径

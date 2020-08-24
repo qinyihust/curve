@@ -36,6 +36,7 @@ class MockLocalFileSystem : public LocalFileSystem {
  public:
     ~MockLocalFileSystem() {}
     MOCK_METHOD1(Init, int(const LocalFileSystemOption&));
+    MOCK_METHOD0(Uninit, int());
     MOCK_METHOD2(Statfs, int(const string&, struct FileSystemInfo*));
     MOCK_METHOD2(Open, int(const string&, int));
     MOCK_METHOD1(Close, int(int));
