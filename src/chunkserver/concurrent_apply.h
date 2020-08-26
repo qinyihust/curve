@@ -107,8 +107,8 @@ class CURVE_CACHELINE_ALIGNMENT ConcurrentApplyModule {
     // 是否使用协程
     bool enableCoroutine_;
     // 用于统一启动后台线程完全创建完成的条件变量
-    bthread::CountdownEvent cond_;
-    // CountDownEvent cond_;
+    // bthread::CountdownEvent cond_;
+    CountDownEvent cond_;
     // 存储threadindex与taskthread的映射关系
     CURVE_CACHELINE_ALIGNMENT std::unordered_map<threadIndex, taskthread_t*> applypoolMap_;     // NOLINT
 };

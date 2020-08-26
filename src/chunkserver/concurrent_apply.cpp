@@ -66,7 +66,9 @@ bool ConcurrentApplyModule::Init(int concurrentsize, int queuedepth,
     enableCoroutine_ = enableCoroutine;
 
     // 等待event事件数，等于线程数
-    cond_.reset(concurrentsize_);
+    LOG(INFO) << "cond rest : " << concurrentsize_;
+    // cond_.reset(concurrentsize_);
+    cond_.Reset(concurrentsize_);
 
     /**
      * 因为hash map并不是线程安全的，所以必须先将applyPoolMap_创建好
@@ -96,7 +98,10 @@ bool ConcurrentApplyModule::Init(int concurrentsize, int queuedepth,
      * 那么可以认为系统或者程序出现了问题，可以判定这次init失败了，直接退出
      */
     timespec time = {5, 0};
-    if (cond_.timed_wait(time)) {
+
+    // if (cond_.timed_wait(time)) {
+    if (cond_.WaitFor(5000)) {
+        LOG(INFO) << "cond wait : " << time.tv_sec;
         isStarted_ = true;
     } else {
         LOG(ERROR) << "init concurrent module's threads fail";
@@ -108,7 +113,10 @@ bool ConcurrentApplyModule::Init(int concurrentsize, int queuedepth,
 
 void ConcurrentApplyModule::Run(int index) {
     LOG(INFO) << "run ConcurrentApply thread :" << index;
-    cond_.signal();
+    // cond_.signal();
+    cond_.Signal();
+    LOG(INFO) << "cond signal : " << index;
+    
     while (!stop_) {
         auto t = applypoolMap_[index]->tq.Pop();
         t();

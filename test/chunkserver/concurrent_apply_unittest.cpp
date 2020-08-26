@@ -87,6 +87,42 @@ TEST(ConcurrentApplyModule, ConcurrentApplyModuleFlushTest) {
     concurrentapply.Stop();
 }
 
+struct TestContext {
+    std::atomic<bool> *stop;
+    std::atomic<uint32_t> *testnum;
+    ConcurrentApplyModule *concurrentapply;
+};
+
+void * testfunc(void *arg) {
+    std::cout << "testfunc begin" << std::endl;
+    TestContext *ctx = (TestContext *)arg;
+    std::atomic<bool> *stop = ctx->stop;
+    std::atomic<uint32_t> *testnum = ctx->testnum;
+    ConcurrentApplyModule *concurrentapply = ctx->concurrentapply;
+    auto runtask = [testnum]() {
+        testnum->fetch_add(1);
+    };
+    while (!stop->load()) {
+        for (int i = 0; i < 10; i++) {
+            concurrentapply->Push(i, runtask);
+        }
+    }
+    return nullptr;
+}
+
+void *flushtest(void *arg) {
+    std::cout << "flushtest begin" << std::endl;
+    TestContext *ctx = (TestContext *)arg;
+    std::atomic<bool> *stop = ctx->stop;
+    std::atomic<uint32_t> *testnum = ctx->testnum;
+    ConcurrentApplyModule *concurrentapply = ctx->concurrentapply;
+    while (!stop->load()) {
+        bthread_usleep(100 * 1000);
+        concurrentapply->Flush();
+    }
+    return nullptr;
+}
+
 TEST(ConcurrentApplyModule, ConcurrentApplyModuleFlushConcurrentTest) {
     /**
      * test flush interface in concurrent condition
@@ -96,38 +132,29 @@ TEST(ConcurrentApplyModule, ConcurrentApplyModuleFlushConcurrentTest) {
 
     ConcurrentApplyModule concurrentapply;
     ASSERT_TRUE(concurrentapply.Init(10, 1, true));
-    auto testfunc = [&concurrentapply, &stop, &testnum]() {
-        auto runtask = [&testnum]() {
-            testnum.fetch_add(1);
-        };
-        while (!stop.load()) {
-            for (int i = 0; i < 10; i++) {
-                concurrentapply.Push(i, runtask);
-            }
-        }
-    };
 
-    auto flushtest = [&concurrentapply, &stop, &testnum]() {
-        while (!stop.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            concurrentapply.Flush();
-        }
-    };
+    TestContext *ctx = new (std::nothrow)TestContext();;
+    ctx->stop = &stop;
+    ctx->testnum = &testnum;
+    ctx->concurrentapply = &concurrentapply;
 
-    std::thread t(testfunc);
-    std::thread f(flushtest);
+    bthread_t t;
+    bthread_t f;
+    ASSERT_EQ(bthread_start_background(&t, NULL, testfunc, ctx), 0);
+    ASSERT_EQ(bthread_start_background(&f, NULL, flushtest, ctx), 0);
 
-    while (testnum.load() <= 1000000) {
+    while (testnum.load() <= 100000) {
     }
 
     stop.store(true);
 
     std::cout << "thread exit, join" << std::endl;
-    t.join();
-    f.join();
+
+    bthread_join(t, NULL);
+    bthread_join(f, NULL);
 
     concurrentapply.Flush();
-    ASSERT_GT(testnum, 1000000);
+    ASSERT_GT(testnum, 100000);
     concurrentapply.Stop();
 }
 

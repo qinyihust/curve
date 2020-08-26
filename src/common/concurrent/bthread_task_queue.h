@@ -46,7 +46,7 @@ class BthreadTaskQueue {
         auto task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
         std::unique_lock<bthread::Mutex> lk(mtx_);
         while (this->tasks_.size() >= this->capacity_) {
-            notemptycv_.wait(lk);
+            notfullcv_.wait(lk);
         }
         tasks_.push(task);
         notemptycv_.notify_one();
