@@ -66,7 +66,7 @@ bool ConcurrentApplyModule::Init(int concurrentsize, int queuedepth,
     enableCoroutine_ = enableCoroutine;
 
     // 等待event事件数，等于线程数
-    cond_.Reset(concurrentsize);
+    cond_.reset(concurrentsize_);
 
     /**
      * 因为hash map并不是线程安全的，所以必须先将applyPoolMap_创建好
@@ -81,11 +81,11 @@ bool ConcurrentApplyModule::Init(int concurrentsize, int queuedepth,
 
     for (int i = 0; i < concurrentsize_; i++) {
         if (enableCoroutine) {
-            BthreadCtx ctx;
-            ctx.apply = this;
-            ctx.index = i;
+            BthreadCtx *ctx = new (std::nothrow)BthreadCtx();
+            ctx->apply = this;
+            ctx->index = i;
             bthread_start_background(&(applypoolMap_[i]->bth),
-                                        NULL, RunBthread, &ctx);
+                                        NULL, RunBthread, ctx);
         } else {
             applypoolMap_[i]->th = std::move(std::thread(&ConcurrentApplyModule::Run, this, i));     // NOLINT
         }
@@ -95,7 +95,8 @@ bool ConcurrentApplyModule::Init(int concurrentsize, int queuedepth,
      * 等待所有线程创建完成，默认等待5秒，后台线程还没有全部创建成功，
      * 那么可以认为系统或者程序出现了问题，可以判定这次init失败了，直接退出
      */
-    if (cond_.WaitFor(5000)) {
+    timespec time = {5, 0};
+    if (cond_.timed_wait(time)) {
         isStarted_ = true;
     } else {
         LOG(ERROR) << "init concurrent module's threads fail";
@@ -106,7 +107,8 @@ bool ConcurrentApplyModule::Init(int concurrentsize, int queuedepth,
 }
 
 void ConcurrentApplyModule::Run(int index) {
-    cond_.Signal();
+    LOG(INFO) << "run ConcurrentApply thread :" << index;
+    cond_.signal();
     while (!stop_) {
         auto t = applypoolMap_[index]->tq.Pop();
         t();
@@ -145,8 +147,8 @@ void ConcurrentApplyModule::Flush() {
     }
 
     std::atomic<bool>* signal = new (std::nothrow) std::atomic<bool>[concurrentsize_];          //NOLINT
-    std::mutex* mtx = new (std::nothrow) std::mutex[concurrentsize_];
-    std::condition_variable* cv= new (std::nothrow) std::condition_variable[concurrentsize_];   //NOLINT
+    bthread::Mutex* mtx = new (std::nothrow) bthread::Mutex[concurrentsize_];
+    bthread::ConditionVariable* cv= new (std::nothrow) bthread::ConditionVariable[concurrentsize_];   //NOLINT
     CHECK(signal != nullptr && mtx != nullptr && cv != nullptr)
     << "allocate buffer failed!";
 
@@ -155,14 +157,16 @@ void ConcurrentApplyModule::Flush() {
     }
 
     auto flushtask = [&mtx, &signal, &cv](int i) {
-        std::unique_lock<std::mutex> lk(mtx[i]);
+        std::unique_lock<bthread::Mutex> lk(mtx[i]);
         signal[i].store(true);
         cv[i].notify_one();
     };
 
     auto flushwait = [&mtx, &signal, &cv](int i) {
-        std::unique_lock<std::mutex> lk(mtx[i]);
-        cv[i].wait(lk, [&]()->bool{return signal[i].load();});
+        std::unique_lock<bthread::Mutex> lk(mtx[i]);
+        while (!signal[i].load()) {
+            cv[i].wait(lk);
+        }
     };
 
     for (int i = 0; i < concurrentsize_; i++) {
