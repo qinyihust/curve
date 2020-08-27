@@ -503,12 +503,27 @@ TEST_F(Ext4LocalFileSystemTest, ReadRealTest) {
     char buf[8192] = {0};
     ASSERT_EQ(4096, lfs->Write(fd, buf, 0, 4096));
     ASSERT_EQ(4096, lfs->Read(fd, buf, 0, 8192));
+
+    LocalFileSystemOption option;
+    option.enableRenameat2 = false;
+    option.enableAio = true;
+    option.enableCoroutine = true;
+    option.maxEvents = 128;
+    ASSERT_EQ(lfs->Init(option), 0);
+    // AIO AND COROUTINE test
+    ASSERT_EQ(4096, lfs->Write(fd, buf, 0, 4096));
+    ASSERT_EQ(4096, lfs->Read(fd, buf, 0, 8192));
+    ASSERT_EQ(4096, lfs->Write(fd, buf, 0, 4096));
+    ASSERT_EQ(4096, lfs->Read(fd, buf, 0, 8192));
+
     ASSERT_EQ(0, lfs->Close(0));
     ASSERT_EQ(0, lfs->Delete("a"));
     FileSystemInfo fsinfo;
     ASSERT_EQ(0, lfs->Statfs("./", &fsinfo));
     ASSERT_TRUE(fsinfo.allocated == fsinfo.stored);
     ASSERT_TRUE(fsinfo.total >= fsinfo.available + fsinfo.stored);
+    LOG(INFO) << "Uninit";
+    ASSERT_EQ(lfs->Uninit(), 0);
 }
 
 }  // namespace fs
