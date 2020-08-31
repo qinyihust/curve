@@ -197,7 +197,8 @@ CSErrorCode CSChunkFile::Open(bool createFile) {
             return CSErrorCode::InternalError;
         }
     }
-    int rc = lfs_->Open(chunkFilePath, O_RDWR|O_NOATIME|O_DSYNC);
+    // int rc = lfs_->Open(chunkFilePath, O_RDWR|O_NOATIME|O_DSYNC);
+    int rc = lfs_->Open(chunkFilePath, O_RDWR|O_NOATIME|O_DIRECT);
     if (rc < 0) {
         LOG(ERROR) << "Error occured when opening file."
                    << " filepath = " << chunkFilePath;

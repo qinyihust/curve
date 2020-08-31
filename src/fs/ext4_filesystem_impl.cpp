@@ -143,6 +143,8 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
         stop_ = false;
         th_ = std::move(std::thread(&Ext4FileSystemImpl::ReapIo, this));
         LOG(INFO) << "ext4 filesystem use aio and conroutine";
+    } else {
+        LOG(INFO) << "use pread pwrite.";
     }
 
     return 0;
@@ -163,20 +165,20 @@ void Ext4FileSystemImpl::ReapIo() {
             continue;
         }
 
-        LOG(INFO) << "get event ctx = " << event.data << ", ret = " << ret;
+        // LOG(INFO) << "get event ctx = " << event.data << ", ret = " << ret;
         CoRoutineContext *ctx =
                         reinterpret_cast<CoRoutineContext *>(event.data);
         ctx->res = event.res;
         ctx->res2 = event.res2;
         // bthread_usleep(100);
-        LOG(INFO) << "res = " << event.res << ", res2 = " << event.res2
-                  << ", waiter = " << ctx->waiter;
+        // LOG(INFO) << "res = " << event.res << ", res2 = " << event.res2
+        //           << ", waiter = " << ctx->waiter;
         ret = bthread::butex_wake(ctx->waiter);
         while (ret == 0) {
             ret = bthread::butex_wake(ctx->waiter);
-            LOG(INFO) << "wake ret = " << ret;
+            // LOG(INFO) << "wake ret = " << ret;
         }
-        LOG(INFO) << "wake butex : " << ctx->waiter;
+        // LOG(INFO) << "wake butex : " << ctx->waiter;
     }
     LOG(INFO) << "end reapio thread";
 }
@@ -404,14 +406,14 @@ int Ext4FileSystemImpl::ReadCoroutine_(int fd,
     ctx.waiter = bthread::butex_create_checked<butil::atomic<int> >();
     const int expected_val = ctx.waiter->load(butil::memory_order_relaxed);
 
-    LOG(INFO) << "data read iosubmit begin";
+    // LOG(INFO) << "data read iosubmit begin";
 
     if (posixWrapper_->iosubmit(ctx_, 1, aioIocbs) < 0) {
         LOG(ERROR) << "failed to submit libaio, errno: " << strerror(errno);
         return -errno;
     }
 
-    LOG(INFO) << "data read wait begin, waiter : " << ctx.waiter;
+    // LOG(INFO) << "data read wait begin, waiter : " << ctx.waiter;
 
     if (bthread::butex_wait(ctx.waiter, expected_val, NULL) < 0 && errno != EWOULDBLOCK && errno != EINTR) {  // NOLINT
         LOG(ERROR) << "read failed at butex_wait ";
@@ -419,9 +421,13 @@ int Ext4FileSystemImpl::ReadCoroutine_(int fd,
     }
 
     bthread::butex_destroy(ctx.waiter);
-    LOG(INFO) << "data read bytes " << ctx.res
-              << " sucess, offset = " << offset
-              << ", len = " << length;
+    if (ctx.res < 0) {
+        LOG(ERROR) << "data read res = " << ctx.res
+                << ", res2 = " << ctx.res2
+                << ", offset = " << offset
+                << ", len = " << length
+                << ", buf = " << (void *)buf;
+    }
 
     return ctx.res;
 }
@@ -482,7 +488,7 @@ int Ext4FileSystemImpl::WriteCoroutine_(int fd,
 
     ctx.waiter = bthread::butex_create_checked<butil::atomic<int> >();
 
-    LOG(INFO) << "data write iosubmit begin";
+    // LOG(INFO) << "data write iosubmit begin";
 
     const int expected_val = ctx.waiter->load(butil::memory_order_relaxed);
 
@@ -491,7 +497,7 @@ int Ext4FileSystemImpl::WriteCoroutine_(int fd,
         return -errno;
     }
 
-    LOG(INFO) << "data write wait begin, waiter : " << ctx.waiter;
+    // LOG(INFO) << "data write wait begin, waiter : " << ctx.waiter;
 
     const timespec abstime = butil::seconds_from_now(5);
 
@@ -501,9 +507,14 @@ int Ext4FileSystemImpl::WriteCoroutine_(int fd,
     }
 
     bthread::butex_destroy(ctx.waiter);
-    LOG(INFO) << "data write bytes " << ctx.res
-              << " sucess , offset = " << offset
-              << ", len = " << length;
+
+    if (ctx.res < 0) {
+        LOG(ERROR) << "data write res = " << ctx.res
+                << ", res2 = " << ctx.res2
+                << ", offset = " << offset
+                << ", len = " << length
+                << ", buf = " << (void *)buf;
+    }
 
     return ctx.res;
 }

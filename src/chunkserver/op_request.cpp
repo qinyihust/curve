@@ -396,9 +396,10 @@ void ReadChunkRequest::ReadChunk() {
     char *readBuffer = nullptr;
     size_t size = request_->size();
 
-    readBuffer = new(std::nothrow)char[size];
-    CHECK(nullptr != readBuffer)
-        << "new readBuffer failed " << strerror(errno);
+    int ret1;
+    ret1 = posix_memalign((void **)&readBuffer, getpagesize(), size);
+    CHECK(0 == ret1 && readBuffer != nullptr)
+        << "posix_memalign readBuffer failed " << strerror(ret1);
 
     auto ret = datastore_->ReadChunk(request_->chunkid(),
                                      request_->sn(),
@@ -446,14 +447,25 @@ void WriteChunkRequest::OnApply(uint64_t index,
                             request_->clonefileoffset());
     }
 
+    char *writeBuf = nullptr;
+    int ret1;
+    ret1 = posix_memalign((void **)&writeBuf, getpagesize(), request_->size());
+    CHECK(0 == ret1 && writeBuf != nullptr)
+        << "posix_memalign writeBuffer failed " << strerror(ret1);
+    ret1 = cntl_->request_attachment().copy_to(writeBuf, request_->size(), 0);
+    CHECK(request_->size() == ret1) << "copy data fail, ret = " << ret1;
+    // memcpy(writeBuf, cntl_->request_attachment().to_string().c_str(), 
+    //             request_->size());
+
     auto ret = datastore_->WriteChunk(request_->chunkid(),
                                       request_->sn(),
-                                      cntl_->request_attachment().to_string().c_str(),  //NOLINT
+                                      // cntl_->request_attachment().to_string().c_str(),  //NOLINT
+                                      writeBuf,
                                       request_->offset(),
                                       request_->size(),
                                       &cost,
                                       cloneSourceLocation);
-
+    free(writeBuf);
     if (CSErrorCode::Success == ret) {
         response_->set_status(CHUNK_OP_STATUS::CHUNK_OP_STATUS_SUCCESS);
         node_->UpdateAppliedIndex(index);
@@ -509,14 +521,24 @@ void WriteChunkRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
                             request.clonefileoffset());
     }
 
+    char *writeBuf = nullptr;
+    int ret1;
+    ret1 = posix_memalign((void **)&writeBuf, getpagesize(), request.size());
+    CHECK(0 == ret1 && writeBuf != nullptr)
+        << "posix_memalign writeBuffer failed " << strerror(ret1);
+    ret1 = data.copy_to(writeBuf, request.size(), 0);
+    CHECK(request.size() == ret1) << "copy data fail, ret = " << ret1;
+    // memcpy(writeBuf, data.to_string().c_str(), request.size());
 
     auto ret = datastore->WriteChunk(request.chunkid(),
                                      request.sn(),
-                                     data.to_string().c_str(),
+                                     // data.to_string().c_str(),
+                                     writeBuf,
                                      request.offset(),
                                      request.size(),
                                      &cost,
                                      cloneSourceLocation);
+    free(writeBuf);
      if (CSErrorCode::Success == ret) {
          return;
      } else if (CSErrorCode::BackwardRequestError == ret) {
@@ -805,11 +827,21 @@ void PasteChunkInternalRequest::OnApply(uint64_t index,
                                         ::google::protobuf::Closure *done) {
     brpc::ClosureGuard doneGuard(done);
 
+    char *pasteBuf = nullptr;
+    int ret1;
+    ret1 = posix_memalign((void **)&pasteBuf, getpagesize(), request_->size());
+    CHECK(0 == ret1 && pasteBuf != nullptr)
+        << "posix_memalign pasteBuf failed " << strerror(ret1);
+    ret1 = data_.copy_to(pasteBuf, request_->size(), 0);
+    CHECK(request_->size() == ret1) << "copy data fail, ret = " << ret1;
+    // memcpy(pasteBuf, data_.to_string().c_str(), request_->size());
+
     auto ret = datastore_->PasteChunk(request_->chunkid(),
-                                      data_.to_string().c_str(),  //NOLINT
+                                      // data_.to_string().c_str(),  //NOLINT
+                                      pasteBuf,
                                       request_->offset(),
                                       request_->size());
-
+    free(pasteBuf);
     if (CSErrorCode::Success == ret) {
         response_->set_status(CHUNK_OP_STATUS::CHUNK_OP_STATUS_SUCCESS);
         node_->UpdateAppliedIndex(index);
@@ -839,11 +871,22 @@ void PasteChunkInternalRequest::OnApply(uint64_t index,
 void PasteChunkInternalRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,  //NOLINT
                                                const ChunkRequest &request,
                                                const butil::IOBuf &data) {
+    char *pasteBuf = nullptr;
+    int ret1;
+    ret1 = posix_memalign((void **)&pasteBuf, getpagesize(), request.size());
+    CHECK(0 == ret1 && pasteBuf != nullptr)
+        << "posix_memalign pasteBuf failed " << strerror(ret1);
+    ret1 = data.copy_to(pasteBuf, request_->size(), 0);
+    CHECK(request_->size() == ret1) << "copy data fail, ret = " << ret1;
+    // memcpy(pasteBuf, data.to_string().c_str(), request_->size());
+
     // NOTE: 处理过程中优先使用参数传入的datastore/request
     auto ret = datastore->PasteChunk(request.chunkid(),
-                                     data.to_string().c_str(),
+                                     // data.to_string().c_str(),
+                                     pasteBuf,
                                      request.offset(),
                                      request.size());
+    free(pasteBuf);
     if (CSErrorCode::Success == ret)
         return;
 

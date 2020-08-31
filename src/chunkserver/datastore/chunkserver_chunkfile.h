@@ -259,11 +259,29 @@ class CSChunkFile {
     }
 
     inline int readMetaPage(char* buf) {
-        return lfs_->Read(fd_, buf, 0, pageSize_);
+        char *newbuf = nullptr;
+        int ret = posix_memalign((void **)&newbuf, getpagesize(), pageSize_);
+        CHECK(0 == ret && newbuf != nullptr)
+            << "posix_memalign readBuffer failed " << strerror(ret);
+        memset(newbuf, 0, pageSize_);
+        ret = lfs_->Read(fd_, newbuf, 0, pageSize_);
+        memcpy(buf, newbuf, pageSize_);
+        free(newbuf);
+        return ret;
+
+        // return lfs_->Read(fd_, buf, 0, pageSize_);
     }
 
     inline int writeMetaPage(const char* buf) {
-        return lfs_->Write(fd_, buf, 0, pageSize_);
+        char *newbuf = nullptr;
+        int ret = posix_memalign((void **)&newbuf, getpagesize(), pageSize_);
+        CHECK(0 == ret && newbuf != nullptr)
+            << "posix_memalign writeBuffer failed " << strerror(ret);
+        memcpy(newbuf, buf, pageSize_);
+        ret = lfs_->Write(fd_, newbuf, 0, pageSize_);
+        free(newbuf);
+        return ret;
+        // return lfs_->Write(fd_, buf, 0, pageSize_);
     }
 
     inline int readData(char* buf, off_t offset, size_t length) {
