@@ -31,6 +31,8 @@
 #include "bthread/butex.h"
 #include "src/fs/local_filesystem.h"
 #include "src/fs/wrap_posix.h"
+#include <sys/eventfd.h>
+#include <sys/epoll.h>
 
 const int MAX_RETYR_TIME = 3;
 
@@ -85,10 +87,14 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     bool enableRenameat2_;
     bool enableCoroutine_;
     bool enableAio_;
+    bool enableEventfd_;
     int maxEvents_;
     io_context_t ctx_;
     std::thread th_;
     bool stop_;
+    int efd_;
+    int epfd_;
+    struct epoll_event epevent_;
 };
 
 }  // namespace fs

@@ -126,6 +126,7 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
     enableCoroutine_ = option.enableCoroutine;
     enableAio_ = option.enableAio;
     maxEvents_ = option.maxEvents;
+    enableEventfd_ = option.enableEventfd;
     // 使用coroutine
     if (enableAio_ && enableCoroutine_) {
         if (maxEvents_ <= 0) {
@@ -140,6 +141,25 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
             return -errno;
         }
 
+        efd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        if (-1 == efd_) {
+            LOG(ERROR) << "failed to eventfd ";
+            return -1;
+        }
+
+        epfd_ = epoll_create(1);
+        if (-1 == epfd_) {
+            LOG(ERROR) << "failed to open epoll_create ";
+            return -1;
+        }
+
+        epevent_.events = EPOLLIN | EPOLLET;
+        epevent_.data.ptr = NULL;
+        if (epoll_ctl(epfd_, EPOLL_CTL_ADD, efd_, &epevent_) != 0) {
+            LOG(ERROR) << "failed to open epoll_ctl ";
+            return -1;
+        }
+
         stop_ = false;
         th_ = std::move(std::thread(&Ext4FileSystemImpl::ReapIo, this));
         LOG(INFO) << "ext4 filesystem use aio and conroutine";
@@ -152,34 +172,53 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
 
 void Ext4FileSystemImpl::ReapIo() {
     LOG(INFO) << "start reapio thread";
+    io_event *events = new io_event[maxEvents_];
     while (!stop_) {
-        // io_event *events = new io_event[maxEvents_];
-        io_event event;
-        timespec time = {0, 100000};  // 100us
-        int ret = posixWrapper_->iogetevents(ctx_, 1, 1,
-                                &event, &time);
-        if (ret <= 0) {
-            if (ret < 0) {
-                LOG(ERROR) << "iogetevents failed, ret = " << ret;
-            }
+        int waitTimeMs = 500;
+        if (epoll_wait(epfd_, &epevent_, 1, waitTimeMs) != 1) {
+            // LOG(INFO) << "failed to epoll_wait error ";
             continue;
         }
 
-        // LOG(INFO) << "get event ctx = " << event.data << ", ret = " << ret;
-        CoRoutineContext *ctx =
-                        reinterpret_cast<CoRoutineContext *>(event.data);
-        ctx->res = event.res;
-        ctx->res2 = event.res2;
-        // bthread_usleep(100);
-        // LOG(INFO) << "res = " << event.res << ", res2 = " << event.res2
-        //           << ", waiter = " << ctx->waiter;
-        ret = bthread::butex_wake(ctx->waiter);
-        while (ret == 0) {
-            ret = bthread::butex_wake(ctx->waiter);
-            // LOG(INFO) << "wake ret = " << ret;
+        uint64_t finishIoCount = 0;
+        int ret = read(efd_, &finishIoCount, sizeof(finishIoCount));
+        if (ret != sizeof(finishIoCount)) {
+            LOG(ERROR) << "failed to efd read error, ret = " << ret;
+            return;
         }
-        // LOG(INFO) << "wake butex : " << ctx->waiter;
+
+        while (finishIoCount > 0) {
+            timespec time = {0, 100000};  // 100us
+            int reapNum = maxEvents_ > finishIoCount
+                                    ? finishIoCount : maxEvents_;
+            int eventNum = posixWrapper_->iogetevents(ctx_, 1, reapNum,
+                                    events, &time);
+            if (eventNum <= 0) {
+                if (eventNum < 0) {
+                    LOG(ERROR) << "iogetevents failed, ret = " << eventNum;
+                }
+                continue;
+            }
+
+            for (int i = 0; i < eventNum; i++) {
+                CoRoutineContext *ctx =
+                        reinterpret_cast<CoRoutineContext *>(events[i].data);
+                ctx->res = events[i].res;
+                ctx->res2 = events[i].res2;
+                // LOG(INFO) << "res = " << event.res
+                //           << ", res2 = " << event.res2
+                //           << ", waiter = " << ctx->waiter;
+                ret = bthread::butex_wake(ctx->waiter);
+                while (ret == 0) {
+                    ret = bthread::butex_wake(ctx->waiter);
+                    // LOG(INFO) << "wake ret = " << ret;
+                }
+                // LOG(INFO) << "wake butex : " << ctx->waiter;
+            }
+            finishIoCount -= eventNum;
+        }
     }
+    free(events);
     LOG(INFO) << "end reapio thread";
 }
 
@@ -187,6 +226,7 @@ int Ext4FileSystemImpl::Uninit() {
     stop_ = true;
     if (enableAio_ && enableCoroutine_) {
         th_.join();
+        close(epfd_);
         posixWrapper_->iodestroy(ctx_);
         enableAio_ = false;
         enableCoroutine_ = false;
@@ -401,7 +441,7 @@ int Ext4FileSystemImpl::ReadCoroutine_(int fd,
 
     io_prep_pread(&aioIocb, fd, buf, length, offset);
     aioIocb.data = &ctx;
-    // io_set_eventfd(&aioIocb, efd);
+    io_set_eventfd(&aioIocb, efd_);
 
     ctx.waiter = bthread::butex_create_checked<butil::atomic<int> >();
     const int expected_val = ctx.waiter->load(butil::memory_order_relaxed);
@@ -426,7 +466,7 @@ int Ext4FileSystemImpl::ReadCoroutine_(int fd,
                 << ", res2 = " << ctx.res2
                 << ", offset = " << offset
                 << ", len = " << length
-                << ", buf = " << (void *)buf;
+                << ", buf = " << reinterpret_cast<void *>(buf);
     }
 
     return ctx.res;
@@ -484,7 +524,7 @@ int Ext4FileSystemImpl::WriteCoroutine_(int fd,
 
     io_prep_pwrite(&aioIocb, fd, const_cast<char *>(buf), length, offset);
     aioIocb.data = &ctx;
-    // io_set_eventfd(&aioIocb, efd);
+    io_set_eventfd(&aioIocb, efd_);
 
     ctx.waiter = bthread::butex_create_checked<butil::atomic<int> >();
 

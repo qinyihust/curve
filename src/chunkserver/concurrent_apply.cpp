@@ -116,7 +116,7 @@ void ConcurrentApplyModule::Run(int index) {
     // cond_.signal();
     cond_.Signal();
     LOG(INFO) << "cond signal : " << index;
-    
+
     while (!stop_) {
         auto t = applypoolMap_[index]->tq.Pop();
         t();

@@ -500,29 +500,52 @@ TEST_F(Ext4LocalFileSystemTest, ReadRealTest) {
     lfs->SetPosixWrapper(pw);
     int fd = lfs->Open("a", O_CREAT|O_RDWR);
     ASSERT_LT(0, fd);  // 0 < fd
-    char buf[8192] = {0};
-    ASSERT_EQ(4096, lfs->Write(fd, buf, 0, 4096));
-    ASSERT_EQ(4096, lfs->Read(fd, buf, 0, 8192));
 
+    char readbuf[4096] = {0};
+    char writebuf[4096] = {0};
+    // pread pwrite, filesize 4MB, read write size 400MB
+    for (int i = 0; i < 100000; i++) {
+        int offset = (i % 1024) * 4096;  // offset在4M以内
+        ASSERT_EQ(4096, lfs->Write(fd, writebuf, offset, 4096));
+        ASSERT_EQ(4096, lfs->Read(fd, readbuf, offset, 4096));
+    }
+
+    ASSERT_EQ(0, lfs->Close(fd));
+    ASSERT_EQ(0, lfs->Delete("a"));
+    FileSystemInfo fsinfo;
+    ASSERT_EQ(0, lfs->Statfs("./", &fsinfo));
+    ASSERT_TRUE(fsinfo.allocated == fsinfo.stored);
+    ASSERT_TRUE(fsinfo.total >= fsinfo.available + fsinfo.stored);
+}
+
+TEST_F(Ext4LocalFileSystemTest, CoroutineRealTest) {
     LocalFileSystemOption option;
     option.enableRenameat2 = false;
     option.enableAio = true;
     option.enableCoroutine = true;
     option.maxEvents = 128;
     ASSERT_EQ(lfs->Init(option), 0);
-    // AIO AND COROUTINE test
-    ASSERT_EQ(4096, lfs->Write(fd, buf, 0, 4096));
-    ASSERT_EQ(4096, lfs->Read(fd, buf, 0, 8192));
-    ASSERT_EQ(4096, lfs->Write(fd, buf, 0, 4096));
-    ASSERT_EQ(4096, lfs->Read(fd, buf, 0, 8192));
 
-    ASSERT_EQ(0, lfs->Close(0));
-    ASSERT_EQ(0, lfs->Delete("a"));
+    std::shared_ptr<PosixWrapper> pw = std::make_shared<PosixWrapper>();
+    lfs->SetPosixWrapper(pw);
+    int fd = lfs->Open("b", O_CREAT|O_RDWR);
+    ASSERT_LT(0, fd);  // 0 < fd
+    char readbuf[4096] = {0};
+    char writebuf[4096] = {0};
+
+    // AIO AND COROUTINE test, filesize 4MB, read write size 400MB
+    for (int i = 0; i < 100000; i++) {
+        int offset = (i % 1024) * 4096;  // offset在4M以内
+        ASSERT_EQ(4096, lfs->Write(fd, writebuf, offset, 4096));
+        ASSERT_EQ(4096, lfs->Read(fd, readbuf, offset, 4096));
+    }
+
+    ASSERT_EQ(0, lfs->Close(fd));
+    ASSERT_EQ(0, lfs->Delete("b"));
     FileSystemInfo fsinfo;
     ASSERT_EQ(0, lfs->Statfs("./", &fsinfo));
     ASSERT_TRUE(fsinfo.allocated == fsinfo.stored);
     ASSERT_TRUE(fsinfo.total >= fsinfo.available + fsinfo.stored);
-    LOG(INFO) << "Uninit";
     ASSERT_EQ(lfs->Uninit(), 0);
 }
 
