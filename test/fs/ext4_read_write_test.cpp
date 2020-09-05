@@ -40,10 +40,12 @@ using ::curve::fs::FileSystemType;
 
 DEFINE_string(path, "/data/chunkserver0/chunkfilepool/", "test path");
 DEFINE_bool(aio, false, "if use aio");
+DEFINE_bool(usebthread, false, "if use bthread");
+DEFINE_int32(threadNum, -1, "test thread num");
 
 bthread_t bth[128];
 int fdList[128];
-std::thread th[10];
+std::thread th[128];
 std::shared_ptr<LocalFileSystem> lfs;
 
 int OpenFileList(int num) {
@@ -95,20 +97,20 @@ void* bthreadRun(void *arg) {
     return nullptr;
 }
 
-int runAioTest() {
-    int ret = OpenFileList(128);
-    if (ret < 0) {
-        return ret;
-    }
-    for (int i = 0; i < 128; i++) {
-        bthread_start_background(&bth[i], NULL, bthreadRun, &fdList[i]);
-    }
+// int runAioTest() {
+//     int ret = OpenFileList(128);
+//     if (ret < 0) {
+//         return ret;
+//     }
+//     for (int i = 0; i < 128; i++) {
+//         bthread_start_background(&bth[i], NULL, bthreadRun, &fdList[i]);
+//     }
 
-    for (int i = 0; i < 128; i++) {
-        bthread_join(bth[i], nullptr);
-    }
-    return 0;
-}
+//     for (int i = 0; i < 128; i++) {
+//         bthread_join(bth[i], nullptr);
+//     }
+//     return 0;
+// }
 
 void pthreadRun(int fd) {
     LOG(INFO) << "pthreadRun, fd = " << fd;
@@ -126,17 +128,49 @@ void pthreadRun(int fd) {
     return;
 }
 
-int runPreadwriteTest() {
-    int ret = OpenFileList(10);
+// int runPreadwriteTest() {
+//     int ret = OpenFileList(10);
+//     if (ret < 0) {
+//         LOG(ERROR) << "openFileList fail";
+//         return ret;
+//     }
+
+//     for (int i = 0; i < 10; i++) {
+//         th[i] = std::move(std::thread(pthreadRun, fdList[i]));
+//     }
+//     for (int i = 0; i < 10; i++) {
+//         th[i].join();
+//     }
+//     return 0;
+// }
+int runBthread(int num) {
+    LOG(INFO) << "run bthread, thread num = " << num;
+    int ret = OpenFileList(num);
+    if (ret < 0) {
+        return ret;
+    }
+    for (int i = 0; i < num; i++) {
+        bthread_start_background(&bth[i], NULL, bthreadRun, &fdList[i]);
+    }
+
+    for (int i = 0; i < num; i++) {
+        bthread_join(bth[i], nullptr);
+    }
+    return 0;
+}
+
+int runPthread(int num) {
+    LOG(INFO) << "run pthread, thread num = " << num;
+    int ret = OpenFileList(num);
     if (ret < 0) {
         LOG(ERROR) << "openFileList fail";
         return ret;
     }
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < num; i++) {
         th[i] = std::move(std::thread(pthreadRun, fdList[i]));
     }
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < num; i++) {
         th[i].join();
     }
     return 0;
@@ -153,6 +187,11 @@ void CloseFds() {
 int main(int argc, char ** argv) {
     google::ParseCommandLineFlags(&argc, &argv, false);
     google::InitGoogleLogging(argv[0]);
+
+    if (FLAGS_threadNum == 0 || FLAGS_threadNum > 128 || FLAGS_threadNum < -1) {
+        LOG(ERROR) << "invalid thread num = " << FLAGS_threadNum;
+        return -1;
+    }
 
     // 初始化本地文件系统
     lfs = LocalFsFactory::CreateFs(FileSystemType::EXT4, "");
@@ -178,10 +217,21 @@ int main(int argc, char ** argv) {
         << "Failed to initialize local filesystem module!";
 
     LOG(INFO) << "start test";
-    if (FLAGS_aio) {
-        runAioTest();
+    int num = 0;
+    if (FLAGS_threadNum == -1) {
+        if (FLAGS_aio) {
+            num = 128;
+        } else {
+            num = 10;
+        }
     } else {
-        runPreadwriteTest();
+        num = FLAGS_threadNum;
+    }
+
+    if (FLAGS_usebthread) {
+        runBthread(num);
+    } else {
+        runPthread(num);
     }
 
     LOG(INFO) << "end test";
