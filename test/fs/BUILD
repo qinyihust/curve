@@ -31,7 +31,8 @@ cc_test(
     name = "lfs_unittest",
     srcs = glob([
             "*.cpp",
-        ]),
+        ],
+        exclude = ["ext4_read_write_test.cpp"]),
     copts = ([
         "-std=c++11",
     ]),
@@ -39,6 +40,20 @@ cc_test(
             "//src/fs:lfs",
             "//test/fs:fs_mock",
             "@com_google_googletest//:gtest_main",
+            ],
+    visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "lfs_read_write_test",
+    srcs = glob([
+            "ext4_read_write_test.cpp",
+        ]),
+    copts = ([
+        "-std=c++11",
+    ]),
+    deps = [
+            "//src/fs:lfs",
             ],
     visibility = ["//visibility:public"],
 )
