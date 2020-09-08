@@ -148,8 +148,8 @@ class ChunkfilePoolHelper {
 
 class CURVE_CACHELINE_ALIGNMENT ChunkfilePool {
  public:
-    // fsptr 本地文件系统.
-    explicit ChunkfilePool(std::shared_ptr<LocalFileSystem> fsptr);
+    ChunkfilePool();
+    static std::shared_ptr<ChunkfilePool> GetInstance();
     virtual ~ChunkfilePool() = default;
 
     /**
@@ -191,6 +191,7 @@ class CURVE_CACHELINE_ALIGNMENT ChunkfilePool {
      * 测试使用
      */
     virtual void SetLocalFileSystem(std::shared_ptr<LocalFileSystem> fs) {
+        CHECK(fs != nullptr) << "fs ptr allocate failed!";
         fsptr_ = fs;
     }
 
@@ -234,6 +235,8 @@ class CURVE_CACHELINE_ALIGNMENT ChunkfilePool {
 
     // chunkfilepool分配状态
     ChunkFilePoolState_t currentState_;
+
+    static std::shared_ptr<ChunkfilePool> instance_;
 };
 }   // namespace chunkserver
 }   // namespace curve

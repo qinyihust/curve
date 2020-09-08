@@ -205,11 +205,17 @@ int ChunkfilePoolHelper::DecodeMetaInfoFromMetaFile(
     return 0;
 }
 
-ChunkfilePool::ChunkfilePool(std::shared_ptr<LocalFileSystem> fsptr):
-                             currentmaxfilenum_(0) {
-    CHECK(fsptr != nullptr) << "fs ptr allocate failed!";
-    fsptr_ = fsptr;
+ChunkfilePool::ChunkfilePool(): currentmaxfilenum_(0) {
     tmpChunkvec_.clear();
+}
+ 
+std::shared_ptr<ChunkfilePool> ChunkfilePool::instance_ = nullptr;
+
+std::shared_ptr<ChunkfilePool> ChunkfilePool::GetInstance() {
+    if (instance_ == nullptr) {
+        instance_ = std::make_shared<ChunkfilePool>();
+    }
+    return instance_;
 }
 
 bool ChunkfilePool::Initialize(const ChunkfilePoolOptions& cfopt) {

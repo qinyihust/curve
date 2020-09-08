@@ -41,6 +41,7 @@
 #include "src/chunkserver/raftsnapshot/curve_snapshot_attachment.h"
 #include "src/chunkserver/raftsnapshot/curve_file_service.h"
 #include "src/chunkserver/raftsnapshot/curve_snapshot_storage.h"
+#include "src/chunkserver/raftlog/curve_segment_log_storage.h"
 #include "src/common/curve_version.h"
 
 using ::curve::fs::LocalFileSystem;
@@ -58,6 +59,7 @@ DEFINE_string(chunkServerMetaUri,
     "local://./0/chunkserver.dat", "chunnkserver meata uri");
 DEFINE_string(copySetUri, "local://./0/copysets", "copyset data uri");
 DEFINE_string(raftSnapshotUri, "curve://./0/copysets", "raft snapshot uri");
+DEFINE_string(raftLogUri, "curve://./0/copysets", "raft log uri");
 DEFINE_string(recycleUri, "local://./0/recycler" , "recycle uri");
 DEFINE_string(chunkFilePoolDir, "./0/", "chunk file pool location");
 DEFINE_string(chunkFilePoolMetaPath,
@@ -72,6 +74,8 @@ namespace chunkserver {
 
 int ChunkServer::Run(int argc, char** argv) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+    RegisterCurveSegmentLogStorageOrDie();
 
     // ==========================加载配置项===============================//
     LOG(INFO) << "Loading Configuration.";
@@ -124,7 +128,8 @@ int ChunkServer::Run(int argc, char** argv) {
     ChunkfilePoolOptions chunkFilePoolOptions;
     InitChunkFilePoolOptions(&conf, &chunkFilePoolOptions);
     std::shared_ptr<ChunkfilePool> chunkfilePool =
-        std::make_shared<ChunkfilePool>(fs);
+        ChunkfilePool::GetInstance();
+    chunkfilePool->SetLocalFileSystem(fs);
     LOG_IF(FATAL, false == chunkfilePool->Initialize(chunkFilePoolOptions))
         << "Failed to init chunk file pool";
 
@@ -602,6 +607,13 @@ void ChunkServer::LoadConfigFromCmdline(common::Configuration *conf) {
     } else {
         LOG(FATAL)
         << "raftSnapshotUri must be set when run chunkserver in command.";
+    }
+    if (GetCommandLineFlagInfo("raftLogUri", &info) && !info.is_default) {
+        conf->SetStringValue(
+                            "copyset.raft_log_uri", FLAGS_raftLogUri);
+    } else {
+        LOG(FATAL)
+        << "raftLogUri must be set when run chunkserver in command.";
     }
 
     if (GetCommandLineFlagInfo("recycleUri", &info) &&
