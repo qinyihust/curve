@@ -83,12 +83,14 @@ bool ConcurrentApplyModule::Init(int concurrentsize, int queuedepth,
 
     for (int i = 0; i < concurrentsize_; i++) {
         if (enableCoroutine) {
+            LOG(INFO) << "start bthread, thread num = " << concurrentsize_;
             BthreadCtx *ctx = new (std::nothrow)BthreadCtx();
             ctx->apply = this;
             ctx->index = i;
             bthread_start_background(&(applypoolMap_[i]->bth),
                                         NULL, RunBthread, ctx);
         } else {
+            LOG(INFO) << "start pthread, thread num = " << concurrentsize_;
             applypoolMap_[i]->th = std::move(std::thread(&ConcurrentApplyModule::Run, this, i));     // NOLINT
         }
     }
@@ -101,7 +103,6 @@ bool ConcurrentApplyModule::Init(int concurrentsize, int queuedepth,
 
     // if (cond_.timed_wait(time)) {
     if (cond_.WaitFor(5000)) {
-        LOG(INFO) << "cond wait : " << time.tv_sec;
         isStarted_ = true;
     } else {
         LOG(ERROR) << "init concurrent module's threads fail";
@@ -148,7 +149,47 @@ void ConcurrentApplyModule::Stop() {
     LOG(INFO) << "stop ConcurrentApplyModule ok.";
 }
 
-void ConcurrentApplyModule::Flush() {
+void ConcurrentApplyModule::FlushPthread() {
+    if (!isStarted_) {
+        LOG(WARNING) << "concurrent module not start!";
+        return;
+    }
+
+    std::atomic<bool>* signal = new (std::nothrow) std::atomic<bool>[concurrentsize_];          //NOLINT
+    std::mutex* mtx = new (std::nothrow) std::mutex[concurrentsize_];
+    std::condition_variable* cv= new (std::nothrow) std::condition_variable[concurrentsize_];   //NOLINT
+    CHECK(signal != nullptr && mtx != nullptr && cv != nullptr)
+    << "allocate buffer failed!";
+
+    for (int i = 0; i < concurrentsize_; i++) {
+        signal[i].store(false);
+    }
+
+    auto flushtask = [&mtx, &signal, &cv](int i) {
+        std::unique_lock<std::mutex> lk(mtx[i]);
+        signal[i].store(true);
+        cv[i].notify_one();
+    };
+
+    auto flushwait = [&mtx, &signal, &cv](int i) {
+        std::unique_lock<std::mutex> lk(mtx[i]);
+        cv[i].wait(lk, [&]()->bool{return signal[i].load();});
+    };
+
+    for (int i = 0; i < concurrentsize_; i++) {
+        applypoolMap_[i]->tq.Push(flushtask, i);
+    }
+
+    for (int i = 0; i < concurrentsize_; i++) {
+        flushwait(i);
+    }
+
+    delete[] signal;
+    delete[] mtx;
+    delete[] cv;
+}
+
+void ConcurrentApplyModule::FlushBthread() {
     if (!isStarted_) {
         LOG(WARNING) << "concurrent module not start!";
         return;
@@ -188,6 +229,13 @@ void ConcurrentApplyModule::Flush() {
     delete[] signal;
     delete[] mtx;
     delete[] cv;
+}
+void ConcurrentApplyModule::Flush() {
+    if (enableCoroutine_) {
+        FlushBthread();
+    } else {
+        FlushPthread();
+    }
 }
 
 }   // namespace chunkserver
