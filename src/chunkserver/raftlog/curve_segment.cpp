@@ -165,6 +165,7 @@ int CurveSegment::load(braft::ConfigurationManager* configuration_manager) {
     int64_t actual_last_index = _first_index - 1;
     for (int64_t i = _first_index; entry_off < load_size; i++) {
         EntryHeader header;
+        LOG(INFO) << "QQQ load entry at " << entry_off;
         const int rc = _load_entry(entry_off, &header, NULL, ENTRY_HEADER_SIZE);
         if (rc > 0) {
             // The last log was not completely written, which should be truncated
@@ -450,6 +451,7 @@ int CurveSegment::append(const braft::LogEntry* entry) {
     ssize_t written = 0;
     butil::Timer timer;
     timer.start();
+    LOG(INFO) << "QQQ write entry at offset " << _bytes << "+" << to_write;
     while (written < (ssize_t)to_write) {
         butil::Timer timer2;
         timer2.start();
