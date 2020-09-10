@@ -67,7 +67,7 @@ public:
     typedef std::map<int64_t, scoped_refptr<CurveSegment> > SegmentMap;
 
     explicit CurveSegmentLogStorage(const std::string& path,
-                                    bool enable_sync = true)
+                                    bool enable_sync = false)
         : _path(path)
         , _first_log_index(1)
         , _last_log_index(0)

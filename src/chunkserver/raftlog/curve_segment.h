@@ -148,6 +148,7 @@ friend class butil::RefCountedThreadSafe<CurveSegment>;
     int64_t _bytes;
     mutable braft::raft_mutex_t _mutex;
     int _fd;
+    int _direct_fd;
     bool _is_open;
     const int64_t _first_index;
     butil::atomic<int64_t> _last_index;

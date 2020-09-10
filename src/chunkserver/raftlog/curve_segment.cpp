@@ -81,6 +81,10 @@ int CurveSegment::create() {
     if (_fd >= 0) {
         butil::make_close_on_exec(_fd);
     }
+    _direct_fd = ::open(path.c_str(), O_RDWR|O_NOATIME|O_DIRECT, 0644);
+    LOG_IF(FATAL, _fd < 0) << "failed to open file with O_DIRECT";
+    butil::make_close_on_exec(_direct_fd);
+
     res = ::lseek(_fd, FLAGS_walPageSize, SEEK_SET);
     if (res != FLAGS_walPageSize) {
         LOG(ERROR) << "lseek fail!";
@@ -137,18 +141,23 @@ int CurveSegment::load(braft::ConfigurationManager* configuration_manager) {
                              _first_index, _last_index.load());
         }
     }
-    _fd = ::open(path.c_str(), O_RDWR);
+    _fd = ::open(path.c_str(), O_RDWR|O_NOATIME);
     if (_fd < 0) {
         LOG(ERROR) << "Fail to open " << path << ", " << berror();
         return -1;
     }
     butil::make_close_on_exec(_fd);
 
+    _direct_fd = ::open(path.c_str(), O_RDWR|O_NOATIME|O_DIRECT, 0644);
+    LOG_IF(FATAL, _fd < 0) << "failed to open file with O_DIRECT";
+    butil::make_close_on_exec(_direct_fd);
+
     // get file size
     struct stat st_buf;
     if (fstat(_fd, &st_buf) != 0) {
         LOG(ERROR) << "Fail to get the stat of " << path << ", " << berror();
         ::close(_fd);
+        ::close(_direct_fd);
         _fd = -1;
         return -1;
     }
@@ -425,66 +434,62 @@ int CurveSegment::append(const braft::LogEntry* entry) {
     uint32_t data_check_sum = get_checksum(_checksum_type, data);
     uint32_t real_length = data.length();
     size_t to_write = ENTRY_HEADER_SIZE + data.length();
-    uint32_t zero_bytes_num = 0;
-    if (to_write % kPageSize != 0) {
-        zero_bytes_num = (to_write / kPageSize + 1) * kPageSize - to_write;
-    }
-    data.resize(data.length() + zero_bytes_num);
-    to_write = ENTRY_HEADER_SIZE + data.length();
-    CHECK_LE(data.length(), 1ul << 56ul);
-    char header_buf[ENTRY_HEADER_SIZE];
+    uint32_t aligned_size = (to_write + kPageSize - 1) / kPageSize * kPageSize;
+
+    char *newbuf = nullptr;
+    int ret = posix_memalign((void **)&newbuf, kPageSize, aligned_size);
+    LOG_IF(FATAL, ret < 0 || newbuf == nullptr)
+        << "posix_memalign WAL writeBuffer failed " << strerror(ret);
+    //memset(newbuf, 0, pageSize_);
+
+    // copy header
     const uint32_t meta_field = (entry->type << 24 ) | (_checksum_type << 16);
-    butil::RawPacker packer(header_buf);
+    butil::RawPacker packer(newbuf);
     packer.pack64(entry->id.term)
           .pack32(meta_field)
-          .pack32((uint32_t)data.length())
+          .pack32(aligned_size - ENTRY_HEADER_SIZE)
           .pack32(real_length)
           .pack32(data_check_sum);
     packer.pack32(get_checksum(
-                  _checksum_type, header_buf, ENTRY_HEADER_SIZE - 4));
-    butil::IOBuf header;
-    header.append(header_buf, ENTRY_HEADER_SIZE);
-    // 4KB alignment
-    butil::IOBuf* pieces[2] = { &header, &data };
-    size_t start = 0;
-    ssize_t written = 0;
+                  _checksum_type, newbuf, ENTRY_HEADER_SIZE - 4));
+    // copy data
+    data.copy_to(newbuf+ENTRY_HEADER_SIZE, real_length);
+
     butil::Timer timer;
     timer.start();
-    while (written < (ssize_t)to_write) {
-        butil::Timer timer2;
-        timer2.start();
-        const ssize_t n = butil::IOBuf::cut_multiple_into_file_descriptor(
-                _fd, pieces + start, ARRAY_SIZE(pieces) - start);
-        timer2.stop();
-        if (n < 0) {
-            LOG(ERROR) << "Fail to write to fd=" << _fd 
-                       << ", path: " << _path << berror();
-            return -1;
-        }
-        written += n;
-
-        for (;start < ARRAY_SIZE(pieces) && pieces[start]->empty(); ++start) {}
+    // write entry
+    ret = ::pwrite(_direct_fd, newbuf, aligned_size, _bytes);
+    free(newbuf);
+    if (ret != aligned_size) {
+        LOG(FATAL) << "Fail to write WAL log into fd=" << _direct_fd
+                << ", path: " << _path << berror();
+        return -1;
     }
     timer.stop();
+
     {
         BAIDU_SCOPED_LOCK(_mutex);
         _offset_and_term.push_back(std::make_pair(_bytes, entry->id.term));
         _last_index.fetch_add(1, butil::memory_order_relaxed);
-        _bytes += to_write;
+        _bytes += aligned_size;
     }
     timer.start();
-    int res = _update_meta_page();
+    ret = _update_meta_page();
     timer.stop();
-    return res;
+    return ret;
 }
 
 int CurveSegment::_update_meta_page() {
-    char metaPage[FLAGS_walPageSize];
+    char *metaPage = nullptr;
+    int ret = posix_memalign((void **)&metaPage, kPageSize, FLAGS_walPageSize);
+    LOG_IF(FATAL, ret < 0 || metaPage == nullptr)
+        << "posix_memalign WAL metaPage failed " << strerror(ret);
     memset(metaPage, 0, sizeof(metaPage));
     memcpy(metaPage, &_bytes, sizeof(_bytes));
-    int res = ::pwrite(_fd, metaPage, FLAGS_walPageSize, 0);
+    int res = ::pwrite(_direct_fd, metaPage, FLAGS_walPageSize, 0);
+    free(metaPage);
     if (res != FLAGS_walPageSize) {
-        LOG(ERROR) << "Fail to write meta page into fd=" << _fd
+        LOG(ERROR) << "Fail to write meta page into fd=" << _direct_fd
                    << ", path: " << _path << berror();
         return -1;
     }
