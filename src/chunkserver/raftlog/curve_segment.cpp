@@ -485,7 +485,8 @@ int CurveSegment::append(const braft::LogEntry* entry) {
     timer.stop();
     {
         BAIDU_SCOPED_LOCK(_mutex);
-        LOG(INFO) << "QQQ push term " << entry->id.term << " at offset " << _bytes;
+        LOG(INFO) << "QQQ push term " << entry->id.term << ", offset " << _bytes
+                  << " at vector no." << _offset_and_term.size();
         _offset_and_term.push_back(std::make_pair(_bytes, entry->id.term));
         _last_index.fetch_add(1, butil::memory_order_relaxed);
         _bytes += to_write;
