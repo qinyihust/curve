@@ -89,6 +89,7 @@ int CurveSegment::create() {
     LOG_IF(INFO, _fd >= 0) << "Created new segment `" << path 
                            << "' with fd=" << _fd ;
     _bytes += FLAGS_walPageSize;
+    LOG(INFO) << "QQQ create segmetn with _bytes=" << _bytes;
     return _fd >= 0 ? 0 : -1;
 }
 
@@ -165,7 +166,7 @@ int CurveSegment::load(braft::ConfigurationManager* configuration_manager) {
     int64_t actual_last_index = _first_index - 1;
     for (int64_t i = _first_index; entry_off < load_size; i++) {
         EntryHeader header;
-        LOG(INFO) << "QQQ load entry at " << entry_off;
+        LOG(INFO) << "QQQ load entry header at " << entry_off;
         const int rc = _load_entry(entry_off, &header, NULL, ENTRY_HEADER_SIZE);
         if (rc > 0) {
             // The last log was not completely written, which should be truncated
@@ -186,6 +187,7 @@ int CurveSegment::load(braft::ConfigurationManager* configuration_manager) {
             butil::IOBuf data;
             // Header will be parsed again but it's fine as configuration
             // changing is rare
+            LOG(INFO) << "QQQ load configuration entry at " << entry_off;
             if (_load_entry(entry_off, NULL, &data, ENTRY_HEADER_SIZE + header.data_real_len) != 0) {
                 break;
             }
@@ -203,6 +205,16 @@ int CurveSegment::load(braft::ConfigurationManager* configuration_manager) {
                 break;
             }
         }
+        if (header.type == braft::ENTRY_TYPE_CONFIGURATION)
+            LOG(INFO) << "QQQ push configuration entry on term " << header.term 
+                      << " at offset " << entry_off;
+        else if (header.type == braft::ENTRY_TYPE_DATA)
+            LOG(INFO) << "QQQ push data entry on term " << header.term 
+                      << " at offset " << entry_off;
+        else if (header.type == braft::ENTRY_TYPE_NO_OP)
+            LOG(INFO) << "QQQ push noop entry on term " << header.term 
+                      << " at offset " << entry_off;
+
         _offset_and_term.push_back(std::make_pair(entry_off, header.term));
         ++actual_last_index;
         entry_off += skip_len;
@@ -350,6 +362,9 @@ int CurveSegment::_load_entry(off_t offset, EntryHeader* head,
                   .unpack32(data_real_len)
                   .unpack32(data_checksum)
                   .unpack32(header_checksum);
+    LOG(INFO) << "load log at offset " << offset << ": term=" << term
+              << ", meta_field=" << meta_field << ", data_len=" << data_len
+              << ", real_len=" << data_real_len;
     EntryHeader tmp;
     tmp.term = term;
     tmp.type = meta_field >> 24;
@@ -470,6 +485,7 @@ int CurveSegment::append(const braft::LogEntry* entry) {
     timer.stop();
     {
         BAIDU_SCOPED_LOCK(_mutex);
+        LOG(INFO) << "QQQ push term " << entry->id.term << " at offset " << _bytes;
         _offset_and_term.push_back(std::make_pair(_bytes, entry->id.term));
         _last_index.fetch_add(1, butil::memory_order_relaxed);
         _bytes += to_write;
