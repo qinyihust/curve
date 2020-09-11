@@ -122,6 +122,7 @@ int ChunkfilePoolHelper::DecodeMetaInfoFromMetaFile(
 
     std::unique_ptr<char[]> readvalid(new char[metaFileSize]);
     memset(readvalid.get(), 0, metaFileSize);
+    LOG(INFO) << "QQQ read metafile: " << metaFilePath;
     int ret = fsptr->Read(fd, readvalid.get(), 0, metaFileSize);
     if (ret != metaFileSize) {
         fsptr->Close(fd);

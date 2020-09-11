@@ -705,6 +705,7 @@ int ChunkServer::ReadChunkServerMeta(const std::shared_ptr<LocalFileSystem> &fs,
     int fd;
     std::string metaFile = UriParser::GetPathFromUri(metaUri);
 
+    LOG(INFO) << "QQQ read chunkserver meta file " << metaFile;
     fd = fs->Open(metaFile.c_str(), O_RDONLY);
     if (fd < 0) {
         LOG(ERROR) << "Failed to open Chunkserver metadata file " << metaFile;

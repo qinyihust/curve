@@ -275,6 +275,7 @@ int Ext4FileSystemImpl::Read(int fd,
     int remainLength = length;
     int relativeOffset = 0;
     int retryTimes = 0;
+    LOG(INFO) << "QQQ read ext4 file fd " << fd;
     while (remainLength > 0) {
         int ret = posixWrapper_->pread(fd,
                                        buf + relativeOffset,

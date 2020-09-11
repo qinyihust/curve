@@ -119,6 +119,7 @@ int CurveMetaTool::PrintChunkMeta(const std::string& chunkFileName) {
     // 读取chunk头部
     char buf[FLAGS_pageSize];
     memset(buf, 0, sizeof(buf));
+    LOG(INFO) << "QQQ metatool read chunk file: " << chunkFileName;
     int rc = localFS_->Read(fd, buf, 0, FLAGS_pageSize);
     localFS_->Close(fd);
     if (rc != FLAGS_pageSize) {
@@ -155,6 +156,7 @@ int CurveMetaTool::PrintSnapshotMeta(const std::string& snapFileName) {
     // 读取快照文件头部
     char buf[FLAGS_pageSize];
     memset(buf, 0, sizeof(buf));
+    LOG(INFO) << "QQQ read snapshot chunk file: " << snapFileName;
     int rc = localFS_->Read(fd, buf, 0, FLAGS_pageSize);
     localFS_->Close(fd);
     if (rc != FLAGS_pageSize) {
