@@ -50,6 +50,7 @@ int ConfEpochFile::Load(const std::string &path,
     int size = 0;
 
     // 1. read数据
+    LOG(INFO) << "QQQ read epoch file: " << path;
     size = fs_->Read(fd, json, 0, kConfEpochFileMaxSize);
     if (size <= 0) {
         LOG(ERROR) << "LoadConfEpoch read failed: " << path

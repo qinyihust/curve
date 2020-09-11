@@ -261,6 +261,7 @@ int CurveSegment::load(braft::ConfigurationManager* configuration_manager) {
 
 int CurveSegment::_load_meta() {
     char metaPage[FLAGS_walPageSize];
+    LOG(INFO) << "QQQ read WAL metapage";
     int res = ::pread(_fd, metaPage, FLAGS_walPageSize, 0);
     if (res != FLAGS_walPageSize) {
         return -1;
@@ -344,6 +345,7 @@ int CurveSegment::_load_entry(off_t offset, EntryHeader* head,
                               butil::IOBuf* data, size_t size_hint) const {
     butil::IOPortal buf;
     size_t to_read = std::max(size_hint, ENTRY_HEADER_SIZE);
+    LOG(INFO) << "QQQ read wal entry";
     const ssize_t n = braft::file_pread(&buf, _fd, offset, to_read);
     if (n != (ssize_t)to_read) {
         return n < 0 ? -1 : 1;
@@ -384,6 +386,7 @@ int CurveSegment::_load_entry(off_t offset, EntryHeader* head,
     if (data != NULL) {
         if (buf.length() < ENTRY_HEADER_SIZE + data_real_len) {
             const size_t to_read = ENTRY_HEADER_SIZE + data_real_len - buf.length();
+            LOG(INFO) << "QQQ read wal entry";
             const ssize_t n = braft::file_pread(&buf, _fd, offset + buf.length(), to_read);
             if (n != (ssize_t)to_read) {
                 return n < 0 ? -1 : 1;

@@ -694,6 +694,7 @@ CSErrorCode CSChunkFile::GetHash(off_t offset,
         return CSErrorCode::InternalError;
     }
 
+    LOG(INFO) << "QQQ read for gethash";
     int rc = lfs_->Read(fd_, buf, offset, length);
     if (rc < 0) {
         LOG(ERROR) << "Read chunk file failed."

@@ -144,6 +144,7 @@ bool SegmentParser::GetNextEntryHeader(EntryHeader* head) {
         return false;
     }
     char buf[ENTRY_HEADER_SIZE];
+    LOG(INFO) << "QQQ log_tool read entry";
     const ssize_t n = localFS_->Read(fd_, buf, off_, ENTRY_HEADER_SIZE);
     if (n != (ssize_t)ENTRY_HEADER_SIZE) {
         if (n < 0) {

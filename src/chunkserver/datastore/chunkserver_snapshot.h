@@ -149,6 +149,7 @@ class CSSnapshot {
     }
 
     inline int readMetaPage(char* buf) {
+        LOG(INFO) << "QQQ read snapshot metapage";
         return lfs_->Read(fd_, buf, 0, pageSize_);
     }
 
@@ -157,6 +158,7 @@ class CSSnapshot {
     }
 
     inline int readData(char* buf, off_t offset, size_t length) {
+        LOG(INFO) << "QQQ read snapshot chunk data";
         return lfs_->Read(fd_, buf, offset + pageSize_, length);
     }
 

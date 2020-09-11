@@ -806,6 +806,7 @@ int CopysetNode::GetHash(std::string *hash) {
             return -1;
         }
 
+        LOG(INFO) << "QQQ read copyset get hash: " << filename;
         ret = fs_->Read(fd, buff, 0, len);
         if (ret != len) {
             delete[] buff;
