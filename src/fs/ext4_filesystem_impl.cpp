@@ -47,6 +47,7 @@ Ext4FileSystemImpl::Ext4FileSystemImpl(
     : posixWrapper_(posixWrapper)
     , enableRenameat2_(false)
     , enableCoroutine_(false)
+    , enableEventfd_(false)
     , stop_(false) {
     CHECK(posixWrapper_ != nullptr) << "PosixWrapper is null";
 }
@@ -141,24 +142,27 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
             return -errno;
         }
 
-        efd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-        if (-1 == efd_) {
-            LOG(ERROR) << "failed to eventfd ";
-            return -1;
+        if (enableEventfd_) {
+            efd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+            if (-1 == efd_) {
+                LOG(ERROR) << "failed to eventfd ";
+                return -1;
+            }
+
+            epfd_ = epoll_create(1);
+            if (-1 == epfd_) {
+                LOG(ERROR) << "failed to open epoll_create ";
+                return -1;
+            }
+
+            epevent_.events = EPOLLIN | EPOLLET;
+            epevent_.data.ptr = NULL;
+            if (epoll_ctl(epfd_, EPOLL_CTL_ADD, efd_, &epevent_) != 0) {
+                LOG(ERROR) << "failed to open epoll_ctl ";
+                return -1;
+            }
         }
 
-        epfd_ = epoll_create(1);
-        if (-1 == epfd_) {
-            LOG(ERROR) << "failed to open epoll_create ";
-            return -1;
-        }
-
-        epevent_.events = EPOLLIN | EPOLLET;
-        epevent_.data.ptr = NULL;
-        if (epoll_ctl(epfd_, EPOLL_CTL_ADD, efd_, &epevent_) != 0) {
-            LOG(ERROR) << "failed to open epoll_ctl ";
-            return -1;
-        }
 
         stop_ = false;
         th_ = std::move(std::thread(&Ext4FileSystemImpl::ReapIo, this));
@@ -170,8 +174,8 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
     return 0;
 }
 
-void Ext4FileSystemImpl::ReapIo() {
-    LOG(INFO) << "start reapio thread";
+void Ext4FileSystemImpl::ReapIoWithEpoll() {
+    LOG(INFO) << "start reapio thread with epoll";
     io_event *events = new io_event[maxEvents_];
     while (!stop_) {
         int waitTimeMs = 500;
@@ -222,11 +226,53 @@ void Ext4FileSystemImpl::ReapIo() {
     LOG(INFO) << "end reapio thread";
 }
 
+void Ext4FileSystemImpl::ReapIoWithoutEpoll() {
+    LOG(INFO) << "start reapio thread with out epoll";
+    while (!stop_) {
+        io_event event;
+        timespec time = {0, 1000000};  // 1000us
+        int ret = posixWrapper_->iogetevents(ctx_, 1, 1,
+                                &event, &time);
+        if (ret <= 0) {
+            if (ret < 0) {
+                LOG(ERROR) << "iogetevents failed, ret = " << ret;
+            }
+            continue;
+        }
+
+        // LOG(INFO) << "get event ctx = " << event.data << ", ret = " << ret;
+        CoRoutineContext *ctx =
+                        reinterpret_cast<CoRoutineContext *>(event.data);
+        ctx->res = event.res;
+        ctx->res2 = event.res2;
+        // bthread_usleep(100);
+        // LOG(INFO) << "res = " << event.res << ", res2 = " << event.res2
+        //           << ", waiter = " << ctx->waiter;
+        ret = bthread::butex_wake(ctx->waiter);
+        while (ret == 0) {
+            ret = bthread::butex_wake(ctx->waiter);
+            // LOG(INFO) << "wake ret = " << ret;
+        }
+        // LOG(INFO) << "wake butex : " << ctx->waiter;
+    }
+    LOG(INFO) << "end reapio thread";
+}
+
+void Ext4FileSystemImpl::ReapIo() {
+    if (enableEventfd_) {
+        ReapIoWithEpoll();
+    } else {
+        ReapIoWithoutEpoll();
+    }
+}
+
 int Ext4FileSystemImpl::Uninit() {
     stop_ = true;
     if (enableAio_ && enableCoroutine_) {
         th_.join();
-        close(epfd_);
+        if (enableEventfd_) {
+            close(epfd_);
+        }
         posixWrapper_->iodestroy(ctx_);
         enableAio_ = false;
         enableCoroutine_ = false;
@@ -441,7 +487,9 @@ int Ext4FileSystemImpl::ReadCoroutine_(int fd,
 
     io_prep_pread(&aioIocb, fd, buf, length, offset);
     aioIocb.data = &ctx;
-    io_set_eventfd(&aioIocb, efd_);
+    if (enableEventfd_) {
+        io_set_eventfd(&aioIocb, efd_);
+    }
 
     ctx.waiter = bthread::butex_create_checked<butil::atomic<int> >();
     const int expected_val = ctx.waiter->load(butil::memory_order_relaxed);
@@ -524,7 +572,9 @@ int Ext4FileSystemImpl::WriteCoroutine_(int fd,
 
     io_prep_pwrite(&aioIocb, fd, const_cast<char *>(buf), length, offset);
     aioIocb.data = &ctx;
-    io_set_eventfd(&aioIocb, efd_);
+    if (enableEventfd_) {
+        io_set_eventfd(&aioIocb, efd_);
+    }
 
     ctx.waiter = bthread::butex_create_checked<butil::atomic<int> >();
 

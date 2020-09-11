@@ -23,6 +23,8 @@
 #ifndef SRC_FS_EXT4_FILESYSTEM_IMPL_H_
 #define SRC_FS_EXT4_FILESYSTEM_IMPL_H_
 
+#include <sys/eventfd.h>
+#include <sys/epoll.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,8 +33,7 @@
 #include "bthread/butex.h"
 #include "src/fs/local_filesystem.h"
 #include "src/fs/wrap_posix.h"
-#include <sys/eventfd.h>
-#include <sys/epoll.h>
+
 
 const int MAX_RETYR_TIME = 3;
 
@@ -75,6 +76,8 @@ class Ext4FileSystemImpl : public LocalFileSystem {
                  unsigned int flags) override;
     bool CheckKernelVersion();
     void ReapIo();
+    void ReapIoWithoutEpoll();
+    void ReapIoWithEpoll();
     int ReadCoroutine_(int fd, char* buf, uint64_t offset, int length);
     int WriteCoroutine_(int fd, const char* buf, uint64_t offset, int length);
     int ReadPread_(int fd, char* buf, uint64_t offset, int length);
