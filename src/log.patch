@@ -1,0 +1,78 @@
+diff --git a/src/braft/log_manager.cpp b/src/braft/log_manager.cpp
+index cf07775..60bf3fd 100644
+--- a/src/braft/log_manager.cpp
++++ b/src/braft/log_manager.cpp
+@@ -135,6 +135,8 @@ void LogManager::clear_memory_logs(const LogId& id) {
+                 if (entry->id > id) {
+                     break;
+                 }
++                LOG(INFO) << "QQQ log manager " << this << ": pop entry " << entry->id.index
++                          << " by clear_memory_logs to " << id.index;
+                 entries_to_clear[nentries++] = entry;
+                 _logs_in_memory.pop_front();
+             }
+@@ -265,6 +267,8 @@ int LogManager::truncate_prefix(const int64_t first_index_kept,
+         if (entry->id.index < first_index_kept) {
+             saved_logs_in_memory.push_back(entry);
+             _logs_in_memory.pop_front();
++            LOG(INFO) << "QQQ log manager " << this << ": pop entry " 
++                      << entry->id.index << " by truncate_prefix";
+         } else {
+             break;
+         }
+@@ -290,6 +294,7 @@ int LogManager::reset(const int64_t next_log_index,
+     CHECK(lck.owns_lock());
+     std::deque<LogEntry*> saved_logs_in_memory;
+     saved_logs_in_memory.swap(_logs_in_memory);
++    LOG(INFO) << "QQQ log manager " << this << ": pop all entry by reset";
+     _first_log_index = next_log_index;
+     _last_log_index = next_log_index - 1;
+     _config_manager->truncate_prefix(_first_log_index);
+@@ -315,8 +320,11 @@ void LogManager::unsafe_truncate_suffix(const int64_t last_index_kept) {
+     while (!_logs_in_memory.empty()) {
+         LogEntry* entry = _logs_in_memory.back();
+         if (entry->id.index > last_index_kept) {
++            LOG(INFO) << "QQQ log manager " << this << ": pop entry " 
++                      << entry->id.index << " by unsafe_truncate_suffix";
+             entry->Release();
+             _logs_in_memory.pop_back();
++
+         } else {
+             break;
+         }
+@@ -436,6 +444,10 @@ void LogManager::append_entries(
+     }
+ 
+     if (!entries->empty()) {
++        for (LogEntry* entry:entries) {
++            LOG(INFO) << "QQQ log manager " << this << ": push entry "
++                      << entry->id.index << " by append_entries";
++        }
+         done->_first_log_index = entries->front()->id.index;
+         _logs_in_memory.insert(_logs_in_memory.end(), entries->begin(), entries->end());
+     }
+@@ -695,8 +707,14 @@ LogEntry* LogManager::get_entry_from_memory(const int64_t index) {
+         CHECK_EQ(last_index - first_index + 1, static_cast<int64_t>(_logs_in_memory.size()));
+         if (index >= first_index && index <= last_index) {
+             entry = _logs_in_memory[index - first_index];
++            LOG(INFO) << "QQQ log manager " << this << ": get entry " << index 
++                      << " from memory[" << first_index << ", " << last_index << "]";
++        } else {
++            LOG(INFO) << "QQQ log manager " << this << ": entry " << index 
++                      << " not found in memory[" << first_index << ", " << last_index << "]";
+         }
+-    }
++    } else
++        LOG(INFO) << "QQQ log manager " << this << ": no entry in memory";
+     return entry;
+ }
+ 
+@@ -771,6 +789,8 @@ LogEntry* LogManager::get_entry(const int64_t index) {
+     }
+     lck.unlock();
+     g_read_entry_from_storage << 1;
++    
++    LOG(INFO) << "QQQ log manager " << this << ": go to load entry from segment file";
+     entry = _log_storage->get_entry(index);
+     if (!entry) {
+         report_error(EIO, "Corrupted entry at index=%" PRId64, index);
