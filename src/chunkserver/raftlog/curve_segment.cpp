@@ -534,6 +534,7 @@ braft::LogEntry* CurveSegment::get(const int64_t index) const {
         braft::ConfigurationPBMeta configuration_meta;
         EntryHeader header;
         butil::IOBuf data;
+        LOG(INFO) << "QQQ segment get entry from offset " << meta.offset;
         if (_load_entry(meta.offset, &header, &data, 
                         meta.length) != 0) {
             ok = false;
