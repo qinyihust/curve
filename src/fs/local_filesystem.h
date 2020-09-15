@@ -46,12 +46,12 @@ struct LocalFileSystemOption {
     bool enableRenameat2;
     bool enableCoroutine;
     bool enableAio;
-    bool enableEventfd;
+    bool enableEpool;
     int maxEvents;
     LocalFileSystemOption() : enableRenameat2(false),
                               enableCoroutine(false),
                               enableAio(false),
-                              enableEventfd(false),
+                              enableEpool(false),
                               maxEvents(-1) {}
 };
 

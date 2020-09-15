@@ -31,6 +31,7 @@
 
 #include "bthread/bthread.h"
 #include "src/common/string_util.h"
+#include "src/common/timeutility.h"
 #include "src/fs/ext4_filesystem_impl.h"
 #include "src/fs/wrap_posix.h"
 
@@ -47,7 +48,7 @@ Ext4FileSystemImpl::Ext4FileSystemImpl(
     : posixWrapper_(posixWrapper)
     , enableRenameat2_(false)
     , enableCoroutine_(false)
-    , enableEventfd_(false)
+    , enableEpool_(false)
     , stop_(false) {
     CHECK(posixWrapper_ != nullptr) << "PosixWrapper is null";
 }
@@ -127,7 +128,11 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
     enableCoroutine_ = option.enableCoroutine;
     enableAio_ = option.enableAio;
     maxEvents_ = option.maxEvents;
-    enableEventfd_ = option.enableEventfd;
+    enableEpool_ = option.enableEpool;
+    LOG(INFO) << "enableCoroutine = " << option.enableCoroutine
+              << ", enableAio = " << option.enableAio
+              << ", maxEvents = " << option.maxEvents
+              << ", enableEpool = " << option.enableEpool;
     // 使用coroutine
     if (enableAio_ && enableCoroutine_) {
         if (maxEvents_ <= 0) {
@@ -142,7 +147,7 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
             return -errno;
         }
 
-        if (enableEventfd_) {
+        if (enableEpool_) {
             efd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
             if (-1 == efd_) {
                 LOG(ERROR) << "failed to eventfd ";
@@ -195,8 +200,12 @@ void Ext4FileSystemImpl::ReapIoWithEpoll() {
             timespec time = {0, 100000};  // 100us
             int reapNum = maxEvents_ > finishIoCount
                                     ? finishIoCount : maxEvents_;
+            uint64_t startTime = common::TimeUtility::GetTimeofDayUs();
             int eventNum = posixWrapper_->iogetevents(ctx_, 1, reapNum,
                                     events, &time);
+            uint64_t endTime = common::TimeUtility::GetTimeofDayUs();
+            metric_.getEventLatancy << endTime - startTime;
+            metric_.getEventRecordCount << eventNum;
             if (eventNum <= 0) {
                 if (eventNum < 0) {
                     LOG(ERROR) << "iogetevents failed, ret = " << eventNum;
@@ -212,11 +221,16 @@ void Ext4FileSystemImpl::ReapIoWithEpoll() {
                 // LOG(INFO) << "res = " << event.res
                 //           << ", res2 = " << event.res2
                 //           << ", waiter = " << ctx->waiter;
+                startTime = common::TimeUtility::GetTimeofDayUs();
+
+                ctx->butexWakeTime = startTime;
                 ret = bthread::butex_wake(ctx->waiter);
                 while (ret == 0) {
                     ret = bthread::butex_wake(ctx->waiter);
                     // LOG(INFO) << "wake ret = " << ret;
                 }
+                endTime = common::TimeUtility::GetTimeofDayUs();
+                metric_.butexWakeLatancy << endTime - startTime;
                 // LOG(INFO) << "wake butex : " << ctx->waiter;
             }
             finishIoCount -= eventNum;
@@ -231,8 +245,12 @@ void Ext4FileSystemImpl::ReapIoWithoutEpoll() {
     while (!stop_) {
         io_event event;
         timespec time = {0, 1000000};  // 1000us
+        uint64_t startTime = common::TimeUtility::GetTimeofDayUs();
         int ret = posixWrapper_->iogetevents(ctx_, 1, 1,
                                 &event, &time);
+        uint64_t endTime = common::TimeUtility::GetTimeofDayUs();
+        metric_.getEventLatancy << endTime - startTime;
+        metric_.getEventRecordCount << 1;
         if (ret <= 0) {
             if (ret < 0) {
                 LOG(ERROR) << "iogetevents failed, ret = " << ret;
@@ -248,35 +266,76 @@ void Ext4FileSystemImpl::ReapIoWithoutEpoll() {
         // bthread_usleep(100);
         // LOG(INFO) << "res = " << event.res << ", res2 = " << event.res2
         //           << ", waiter = " << ctx->waiter;
+        startTime = common::TimeUtility::GetTimeofDayUs();
+
+        ctx->butexWakeTime = startTime;
         ret = bthread::butex_wake(ctx->waiter);
         while (ret == 0) {
             ret = bthread::butex_wake(ctx->waiter);
             // LOG(INFO) << "wake ret = " << ret;
         }
+        endTime = common::TimeUtility::GetTimeofDayUs();
+        metric_.butexWakeLatancy << endTime - startTime;
         // LOG(INFO) << "wake butex : " << ctx->waiter;
     }
     LOG(INFO) << "end reapio thread";
 }
 
 void Ext4FileSystemImpl::ReapIo() {
-    if (enableEventfd_) {
+    if (enableEpool_) {
         ReapIoWithEpoll();
     } else {
         ReapIoWithoutEpoll();
     }
 }
 
+void Ext4FileSystemMetric::PrintMetric() {
+    PrintOneMetric(totalWriteLatancy);
+    PrintOneMetric(totalReadLatancy);
+    PrintOneMetric(writePrepLatancy);
+    PrintOneMetric(writeSetEventfdLatancy);
+    PrintOneMetric(writeButexCreate);
+    PrintOneMetric(writeIosubmitLatancy);
+    PrintOneMetric(writeButexWaitLatancy);
+    PrintOneMetric(writeButexDestroyLatancy);
+    PrintOneMetric(writeFinishIoLatancy);
+    PrintOneMetric(writeCtxSwichLatancy);
+    PrintOneMetric(readPrepLatancy);
+    PrintOneMetric(readSetEventfdLatancy);
+    PrintOneMetric(readButexCreate);
+    PrintOneMetric(readIosubmitLatancy);
+    PrintOneMetric(readButexWaitLatancy);
+    PrintOneMetric(readButexDestroyLatancy);
+    PrintOneMetric(readFinishIoLatancy);
+    PrintOneMetric(readCtxSwichLatancy);
+    PrintOneMetric(getEventRecordCount);
+    PrintOneMetric(getEventLatancy);
+    PrintOneMetric(butexWakeLatancy);
+}
+
+void Ext4FileSystemMetric::PrintOneMetric(bvar::LatencyRecorder &record) {
+    LOG(INFO) << record.latency_name()
+        << "\navg: " << record.latency()
+        << "\nmax: " << record.max_latency()
+        << "\n50percentile: " << record.latency_percentile(0.5)
+        << "\n80percentile: " << record.latency_percentile(0.8)
+        << "\n90percentile: " << record.latency_percentile(0.9)
+        << "\n99percentile: " << record.latency_percentile(0.99)
+        << "\n999percentile: " << record.latency_percentile(0.999);
+}
+
 int Ext4FileSystemImpl::Uninit() {
     stop_ = true;
     if (enableAio_ && enableCoroutine_) {
         th_.join();
-        if (enableEventfd_) {
+        if (enableEpool_) {
             close(epfd_);
         }
         posixWrapper_->iodestroy(ctx_);
         enableAio_ = false;
         enableCoroutine_ = false;
     }
+    metric_.PrintMetric();
     return 0;
 }
 
@@ -432,11 +491,16 @@ int Ext4FileSystemImpl::Read(int fd,
                              char *buf,
                              uint64_t offset,
                              int length) {
+    uint64_t startTime = common::TimeUtility::GetTimeofDayUs();
+    int ret;
     if (enableCoroutine_) {
-        return ReadCoroutine_(fd, buf, offset, length);
+        ret = ReadCoroutine_(fd, buf, offset, length);
     } else {
-        return ReadPread_(fd, buf, offset, length);
+        ret = ReadPread_(fd, buf, offset, length);
     }
+    uint64_t latancy = common::TimeUtility::GetTimeofDayUs() - startTime;
+    metric_.totalReadLatancy << latancy;
+    return ret;
 }
 
 int Ext4FileSystemImpl::ReadPread_(int fd,
@@ -484,31 +548,51 @@ int Ext4FileSystemImpl::ReadCoroutine_(int fd,
     struct CoRoutineContext ctx;
     ctx.res = 0;
     ctx.res2 = 0;
+    ctx.butexWakeTime = 0;
+    ctx.isWrite = false;
 
+    uint64_t startTime = common::TimeUtility::GetTimeofDayUs();
     io_prep_pread(&aioIocb, fd, buf, length, offset);
     aioIocb.data = &ctx;
-    if (enableEventfd_) {
+    uint64_t endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.readPrepLatancy << endTime - startTime;
+
+    if (enableEpool_) {
+        startTime = endTime;
         io_set_eventfd(&aioIocb, efd_);
+        endTime = common::TimeUtility::GetTimeofDayUs();
+        metric_.readSetEventfdLatancy << endTime - startTime;
     }
 
+    startTime = endTime;
     ctx.waiter = bthread::butex_create_checked<butil::atomic<int> >();
     const int expected_val = ctx.waiter->load(butil::memory_order_relaxed);
+    endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.readButexCreate << endTime - startTime;
 
-    // LOG(INFO) << "data read iosubmit begin";
-
+    startTime = endTime;
+    uint64_t submitStartTime = startTime;
     if (posixWrapper_->iosubmit(ctx_, 1, aioIocbs) < 0) {
         LOG(ERROR) << "failed to submit libaio, errno: " << strerror(errno);
         return -errno;
     }
+    endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.readIosubmitLatancy << endTime - startTime;
 
-    // LOG(INFO) << "data read wait begin, waiter : " << ctx.waiter;
-
+    startTime = endTime;
     if (bthread::butex_wait(ctx.waiter, expected_val, NULL) < 0 && errno != EWOULDBLOCK && errno != EINTR) {  // NOLINT
         LOG(ERROR) << "read failed at butex_wait ";
         return -errno;
     }
+    endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.readButexWaitLatancy << endTime - startTime;
+    metric_.readCtxSwichLatancy << endTime - ctx.butexWakeTime;
+    metric_.readFinishIoLatancy << ctx.butexWakeTime - submitStartTime;
 
+    startTime = endTime;
     bthread::butex_destroy(ctx.waiter);
+    endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.readButexDestroyLatancy << endTime - startTime;
     if (ctx.res < 0) {
         LOG(ERROR) << "data read res = " << ctx.res
                 << ", res2 = " << ctx.res2
@@ -524,11 +608,18 @@ int Ext4FileSystemImpl::Write(int fd,
                               const char *buf,
                               uint64_t offset,
                               int length) {
+    uint64_t startTime = common::TimeUtility::GetTimeofDayUs();
+    int ret;
     if (enableCoroutine_) {
-        return WriteCoroutine_(fd, buf, offset, length);
+        ret = WriteCoroutine_(fd, buf, offset, length);
     } else {
-        return WritePwrite_(fd, buf, offset, length);
+        ret = WritePwrite_(fd, buf, offset, length);
     }
+    uint64_t latancy = common::TimeUtility::GetTimeofDayUs() - startTime;
+    metric_.totalWriteLatancy << latancy;
+    // LOG(INFO) << "latancy = " << latancy << ", max: " << metric_.totalWriteLatancy.max_latency();
+
+    return ret;
 }
 
 int Ext4FileSystemImpl::WritePwrite_(int fd,
@@ -569,34 +660,51 @@ int Ext4FileSystemImpl::WriteCoroutine_(int fd,
     struct CoRoutineContext ctx;
     ctx.res = 0;
     ctx.res2 = 0;
+    ctx.butexWakeTime = 0;
+    ctx.isWrite = true;
 
+    uint64_t startTime = common::TimeUtility::GetTimeofDayUs();
     io_prep_pwrite(&aioIocb, fd, const_cast<char *>(buf), length, offset);
     aioIocb.data = &ctx;
-    if (enableEventfd_) {
+    uint64_t endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.writePrepLatancy << endTime - startTime;
+
+    if (enableEpool_) {
+        startTime = endTime;
         io_set_eventfd(&aioIocb, efd_);
+        endTime = common::TimeUtility::GetTimeofDayUs();
+        metric_.writeSetEventfdLatancy << endTime - startTime;
     }
 
+    startTime = endTime;
     ctx.waiter = bthread::butex_create_checked<butil::atomic<int> >();
-
-    // LOG(INFO) << "data write iosubmit begin";
-
     const int expected_val = ctx.waiter->load(butil::memory_order_relaxed);
+    endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.writeButexCreate << endTime - startTime;
 
+    startTime = endTime;
+    uint64_t submitStartTime = startTime;
     if (posixWrapper_->iosubmit(ctx_, 1, aioIocbs) < 0) {
         LOG(ERROR) << "failed to submit libaio, errno: " << strerror(errno);
         return -errno;
     }
+    endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.writeIosubmitLatancy << endTime - startTime;
 
-    // LOG(INFO) << "data write wait begin, waiter : " << ctx.waiter;
-
-    const timespec abstime = butil::seconds_from_now(5);
-
+    startTime = endTime;
     if (bthread::butex_wait(ctx.waiter, expected_val, NULL) < 0 && errno != EWOULDBLOCK && errno != EINTR) {  // NOLINT
         LOG(ERROR) << "write failed at butex_wait, errno: " << strerror(errno);
         return -errno;
     }
+    endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.writeButexWaitLatancy << endTime - startTime;
+    metric_.writeCtxSwichLatancy << endTime - ctx.butexWakeTime;
+    metric_.writeFinishIoLatancy << ctx.butexWakeTime - submitStartTime;
 
+    startTime = endTime;
     bthread::butex_destroy(ctx.waiter);
+    endTime = common::TimeUtility::GetTimeofDayUs();
+    metric_.writeButexDestroyLatancy << endTime - startTime;
 
     if (ctx.res < 0) {
         LOG(ERROR) << "data write res = " << ctx.res

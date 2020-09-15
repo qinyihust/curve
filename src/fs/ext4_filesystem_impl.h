@@ -25,6 +25,7 @@
 
 #include <sys/eventfd.h>
 #include <sys/epoll.h>
+#include <bvar/bvar.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -33,7 +34,7 @@
 #include "bthread/butex.h"
 #include "src/fs/local_filesystem.h"
 #include "src/fs/wrap_posix.h"
-
+#include "src/common/concurrent/concurrent.h"
 
 const int MAX_RETYR_TIME = 3;
 
@@ -43,6 +44,61 @@ struct CoRoutineContext {
     butil::atomic<int>* waiter;
     volatile int64_t res;
     volatile int64_t res2;
+    // common::Atomic<uint64_t> waitStartTime;
+    uint64_t butexWakeTime;
+    bool isWrite;
+};
+
+class Ext4FileSystemMetric {
+ public:
+    const std::string prefix = "curve lfs";
+    bvar::LatencyRecorder totalWriteLatancy;
+    bvar::LatencyRecorder totalReadLatancy;
+    bvar::LatencyRecorder writePrepLatancy;
+    bvar::LatencyRecorder writeSetEventfdLatancy;
+    bvar::LatencyRecorder writeButexCreate;
+    bvar::LatencyRecorder writeIosubmitLatancy;
+    bvar::LatencyRecorder writeButexWaitLatancy;
+    bvar::LatencyRecorder writeButexDestroyLatancy;
+    bvar::LatencyRecorder writeFinishIoLatancy;
+    bvar::LatencyRecorder writeCtxSwichLatancy;
+    bvar::LatencyRecorder readPrepLatancy;
+    bvar::LatencyRecorder readSetEventfdLatancy;
+    bvar::LatencyRecorder readButexCreate;
+    bvar::LatencyRecorder readIosubmitLatancy;
+    bvar::LatencyRecorder readButexWaitLatancy;
+    bvar::LatencyRecorder readButexDestroyLatancy;
+    bvar::LatencyRecorder readFinishIoLatancy;
+    bvar::LatencyRecorder readCtxSwichLatancy;
+    bvar::LatencyRecorder getEventRecordCount;
+    bvar::LatencyRecorder getEventLatancy;
+    bvar::LatencyRecorder butexWakeLatancy;
+    Ext4FileSystemMetric()
+        : totalWriteLatancy(prefix, "totalWriteLatancy"),
+          totalReadLatancy(prefix, "totalReadLatancy"),
+          writePrepLatancy(prefix, "writePrepLatancy"),
+          writeSetEventfdLatancy(prefix, "writeSetEventfdLatancy"),
+          writeButexCreate(prefix, "writeButexCreate"),
+          writeIosubmitLatancy(prefix, "writeIosubmitLatancy"),
+          writeButexWaitLatancy(prefix, "writeButexWaitLatancy"),
+          writeButexDestroyLatancy(prefix, "writeButexDestroyLatancy"),
+          writeFinishIoLatancy(prefix, "writeFinishIoLatancy"),
+          writeCtxSwichLatancy(prefix, "writeCtxSwichLatancy"),
+          readPrepLatancy(prefix, "readPrepLatancy"),
+          readSetEventfdLatancy(prefix, "readSetEventfdLatancy"),
+          readButexCreate(prefix, "readButexCreate"),
+          readIosubmitLatancy(prefix, "readIosubmitLatancy"),
+          readButexWaitLatancy(prefix, "readButexWaitLatancy"),
+          readButexDestroyLatancy(prefix, "readButexDestroyLatancy"),
+          readFinishIoLatancy(prefix, "readFinishIoLatancy"),
+          readCtxSwichLatancy(prefix, "readCtxSwichLatancy"),
+          getEventRecordCount(prefix, "getEventRecordCount"),
+          getEventLatancy(prefix, "getEventLatancy"),
+          butexWakeLatancy(prefix, "butexWakeLatancy") {}
+    void PrintMetric();
+
+ private:
+    void PrintOneMetric(bvar::LatencyRecorder &record);
 };
 
 class Ext4FileSystemImpl : public LocalFileSystem {
@@ -90,7 +146,7 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     bool enableRenameat2_;
     bool enableCoroutine_;
     bool enableAio_;
-    bool enableEventfd_;
+    bool enableEpool_;
     int maxEvents_;
     io_context_t ctx_;
     std::thread th_;
@@ -98,6 +154,7 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     int efd_;
     int epfd_;
     struct epoll_event epevent_;
+    Ext4FileSystemMetric metric_;
 };
 
 }  // namespace fs
