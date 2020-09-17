@@ -45,6 +45,7 @@ DEFINE_int32(threadNum, -1, "test thread num");
 DEFINE_uint32(iocount, UINT_MAX, "io count per thread");
 DEFINE_uint32(iopsPerDisk, UINT_MAX, "iops per disk");
 DEFINE_bool(useepool, false, "if use epool");
+DEFINE_bool(dsync, false, "if use dsync");
 
 bthread_t bth[128];
 int fdList[128];
@@ -77,7 +78,13 @@ int OpenFileList(int num) {
     }
     while (count < num && index < 2000) {
         filename = FLAGS_path + std::to_string(index++);
-        int fd = lfs->Open(filename, O_RDWR|O_NOATIME|O_DIRECT);
+        int fd = 0;
+        if (FLAGS_dsync) {
+            fd = lfs->Open(filename, O_RDWR|O_NOATIME|O_DSYNC);
+        } else {
+            fd = lfs->Open(filename, O_RDWR|O_NOATIME|O_DIRECT);
+        }
+
         if (fd > 0) {
             fdList[count] = fd;
             LOG(INFO) << "open file :" << filename;
@@ -257,7 +264,13 @@ int main(int argc, char ** argv) {
     LocalFileSystemOption lfsOption;
 
     LOG(INFO) << "FLAGS_aio = " << FLAGS_aio
-              << ", FLAGS_path = " << FLAGS_path;
+              << ", FLAGS_path = " << FLAGS_path
+              << ", FLAGS_dsync = " << FLAGS_dsync
+              << ", FLAGS_useepool = " << FLAGS_useepool
+              << ", FLAGS_threadNum = " << FLAGS_threadNum
+              << ", FLAGS_usebthread = " << FLAGS_usebthread
+              << ", FLAGS_iocount = " << FLAGS_iocount
+              << ", FLAGS_iopsPerDisk = " << FLAGS_iopsPerDisk;
     if (FLAGS_aio) {
         lfsOption.enableRenameat2 = true;
         lfsOption.enableCoroutine = true;

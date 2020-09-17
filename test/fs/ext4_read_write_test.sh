@@ -168,3 +168,59 @@ do
     count=`ps -aux | grep lfs_read_write_test | grep -v grep | wc -l`
 done
 echo
+echo case 19
+echo "sudo ./lfs_read_write_test -path /data/chunkserver0/chunkfilepool/ -threadNum 10 -iocount 100000 -logtostderr -usebthread -dsync"
+sudo ./lfs_read_write_test -path /data/chunkserver0/chunkfilepool/ -threadNum 10 -iocount 100000 -logtostderr -usebthread -dsync >> result.txt 2>&1
+echo
+echo case 20
+echo "sudo ./lfs_read_write_test -path /data/chunkserver0/chunkfilepool/ -threadNum 10 -iocount 100000 -logtostderr -dsync"
+sudo ./lfs_read_write_test -path /data/chunkserver0/chunkfilepool/ -threadNum 10 -iocount 100000 -logtostderr -dsync >> result.txt 2>&1
+echo
+echo case 21
+echo "for i in {0..9}; do sudo ./lfs_read_write_test -path /data/chunkserver$i/chunkfilepool/  -threadNum 10 -iocount 100000 -logtostderr  -usebthread -dsync & done"
+for i in {0..9}; do sudo ./lfs_read_write_test -path /data/chunkserver$i/chunkfilepool/  -threadNum 10 -iocount 100000 -logtostderr  -usebthread -dsync >> result.txt 2>&1 & done
+count=`ps -aux | grep lfs_read_write_test | grep -v grep | wc -l`
+echo ${count}
+while [ ${count} -ne 0 ]
+do
+    sleep 5
+    echo count = ${count} ,sleep 5
+    count=`ps -aux | grep lfs_read_write_test | grep -v grep | wc -l`
+done
+echo
+echo case 22
+echo "for i in {0..9}; do sudo ./lfs_read_write_test -path /data/chunkserver$i/chunkfilepool/  -threadNum 10 -iocount 100000 -logtostderr -dsync & done"
+for i in {0..9}; do sudo ./lfs_read_write_test -path /data/chunkserver$i/chunkfilepool/  -threadNum 10 -iocount 100000 -logtostderr -dsync >> result.txt 2>&1 & done
+count=`ps -aux | grep lfs_read_write_test | grep -v grep | wc -l`
+echo ${count}
+while [ ${count} -ne 0 ]
+do
+    sleep 5
+    echo count = ${count} ,sleep 5
+    count=`ps -aux | grep lfs_read_write_test | grep -v grep | wc -l`
+done
+echo
+echo case 23
+echo "for i in {0..19}; do sudo ./lfs_read_write_test -path /data/chunkserver$i/chunkfilepool/  -threadNum 10 -iocount 100000 -logtostderr  -usebthread -dsync & done"
+for i in {0..19}; do sudo ./lfs_read_write_test -path /data/chunkserver$i/chunkfilepool/  -threadNum 10 -iocount 100000 -logtostderr  -usebthread -dsync >> result.txt 2>&1 & done
+count=`ps -aux | grep lfs_read_write_test | grep -v grep | wc -l`
+echo ${count}
+while [ ${count} -ne 0 ]
+do
+    sleep 5
+    echo count = ${count} ,sleep 5
+    count=`ps -aux | grep lfs_read_write_test | grep -v grep | wc -l`
+done
+echo
+echo case 24
+echo "for i in {0..19}; do sudo ./lfs_read_write_test -path /data/chunkserver$i/chunkfilepool/  -threadNum 10 -iocount 100000 -logtostderr -dsync & done"
+for i in {0..19}; do sudo ./lfs_read_write_test -path /data/chunkserver$i/chunkfilepool/  -threadNum 10 -iocount 100000 -logtostderr -dsync >> result.txt 2>&1 & done
+count=`ps -aux | grep lfs_read_write_test | grep -v grep | wc -l`
+echo ${count}
+while [ ${count} -ne 0 ]
+do
+    sleep 5
+    echo count = ${count} ,sleep 5
+    count=`ps -aux | grep lfs_read_write_test | grep -v grep | wc -l`
+done
+echo
