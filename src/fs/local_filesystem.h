@@ -45,7 +45,11 @@ namespace fs {
 
 struct LocalFileSystemOption {
     bool enableRenameat2;
-    LocalFileSystemOption() : enableRenameat2(false) {}
+    bool enableEpoll;
+    int maxEvents;
+    LocalFileSystemOption() : enableRenameat2(false),
+                              enableEpoll(true),
+                              maxEvents(128) {}
 };
 
 class LocalFileSystem {
@@ -61,7 +65,7 @@ class LocalFileSystem {
      * @param option：初始化参数
      */
     virtual int Init(const LocalFileSystemOption& option) = 0;
-
+    virtual int Uninit() = 0;
     /**
      * 获取文件或目录所在的文件系统状态信息
      * @param path: 要获取的文件系统下的文件或目录路径
@@ -156,21 +160,13 @@ class LocalFileSystem {
      * @param buf：待写入数据的buffer
      * @param offset：写入区域的起始偏移
      * @param length：写入数据的长度
+     * @param done: 回调
      * @return 返回成功写入的数据长度，失败返回-1
      */
-    virtual int Write(int fd, const char* buf, uint64_t offset, int length) = 0;
-
-    /**
-     * 向文件指定区域写入数据
-     * @param fd：文件句柄id，通过Open接口获取
-     * @param buf：待写入数据
-     * @param offset：写入区域的起始偏移
-     * @param length：写入数据的长度
-     * @return 返回成功写入的数据长度，失败返回-1
-     */
-    virtual int Write(int fd, butil::IOBuf buf, uint64_t offset,
+    virtual int Write(int fd, const char *buf, uint64_t offset,
                       int length) = 0;
-
+    virtual int WriteAsync(int fd, const char *buf, uint64_t offset,
+                      int length, void *done) = 0;
     /**
      * 向文件末尾追加数据
      * @param fd：文件句柄id，通过Open接口获取

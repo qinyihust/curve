@@ -209,17 +209,19 @@ CSErrorCode CSDataStore::CreateChunkFile(const ChunkOptions & options,
 
 CSErrorCode CSDataStore::WriteChunk(ChunkID id,
                             SequenceNum sn,
-                            const butil::IOBuf& buf,
+                            const char* buf,
                             off_t offset,
                             size_t length,
                             uint32_t* cost,
+                            ReqClosure* done,
                             const std::string & cloneSourceLocation)  {
     // 请求版本号不允许为0，snapsn=0时会当做快照不存在的判断依据
     if (sn == kInvalidSeq) {
-        LOG(ERROR) << "Sequence num should not be zero."
+        LOG(FATAL) << "Sequence num should not be zero."
                    << "ChunkID = " << id;
         return CSErrorCode::InvalidArgError;
     }
+
     auto chunkFile = metaCache_.Get(id);
     // 如果chunk文件不存在，则先创建chunk文件
     if (chunkFile == nullptr) {
@@ -233,6 +235,7 @@ CSErrorCode CSDataStore::WriteChunk(ChunkID id,
         options.metric = metric_;
         CSErrorCode errorCode = CreateChunkFile(options, &chunkFile);
         if (errorCode != CSErrorCode::Success) {
+            LOG(FATAL) << "error create chunk file";
             return errorCode;
         }
     }
@@ -241,9 +244,10 @@ CSErrorCode CSDataStore::WriteChunk(ChunkID id,
                                              buf,
                                              offset,
                                              length,
-                                             cost);
+                                             cost,
+                                             done);
     if (errorCode != CSErrorCode::Success) {
-        LOG(WARNING) << "Write chunk file failed."
+        LOG(FATAL) << "Write chunk file failed."
                      << "ChunkID = " << id;
         return errorCode;
     }

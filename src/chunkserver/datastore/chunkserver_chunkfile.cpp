@@ -197,7 +197,7 @@ CSErrorCode CSChunkFile::Open(bool createFile) {
             return CSErrorCode::InternalError;
         }
     }
-    int rc = lfs_->Open(chunkFilePath, O_RDWR|O_NOATIME|O_DSYNC);
+    int rc = lfs_->Open(chunkFilePath, O_RDWR|O_NOATIME|O_DIRECT);
     if (rc < 0) {
         LOG(ERROR) << "Error occured when opening file."
                    << " filepath = " << chunkFilePath;
@@ -265,10 +265,12 @@ CSErrorCode CSChunkFile::LoadSnapshot(SequenceNum sn) {
 }
 
 CSErrorCode CSChunkFile::Write(SequenceNum sn,
-                               const butil::IOBuf& buf,
+                               const char* buf,
                                off_t offset,
                                size_t length,
-                               uint32_t* cost) {
+                               uint32_t* cost,
+                               ReqClosure *done) {
+    brpc::ClosureGuard doneGuard(done);
     WriteLockGuard writeGuard(rwLock_);
     if (!CheckOffsetAndLength(offset, length)) {
         LOG(ERROR) << "Write chunk failed, invalid offset or length."
@@ -277,6 +279,7 @@ CSErrorCode CSChunkFile::Write(SequenceNum sn,
                    << ", length: " << length
                    << ", page size: " << pageSize_
                    << ", chunk size: " << size_;
+        done->res_ = CSErrorCode::InvalidArgError;
         return CSErrorCode::InvalidArgError;
     }
     // 用户快照以后会保证之前的请求全部到达或者超时以后才会下发新的请求
@@ -287,95 +290,31 @@ CSErrorCode CSChunkFile::Write(SequenceNum sn,
                      << ",request sn: " << sn
                      << ",chunk sn: " << metaPage_.sn
                      << ",correctedSn: " << metaPage_.correctedSn;
+        done->res_ = CSErrorCode::BackwardRequestError;
         return CSErrorCode::BackwardRequestError;
     }
     // 判断是否需要创建快照文件
     if (needCreateSnapshot(sn)) {
-        // 存在历史快照未被删掉
-        if (snapshot_ != nullptr) {
-            LOG(ERROR) << "Exists old snapshot."
-                       << "ChunkID: " << chunkId_
-                       << ",request sn: " << sn
-                       << ",chunk sn: " << metaPage_.sn
-                       << ",old snapshot sn: "
-                       << snapshot_->GetSn();
-            return CSErrorCode::SnapshotConflictError;
-        }
-
-        // clone chunk不允许创建快照
-        if (isCloneChunk_) {
-            LOG(ERROR) << "Clone chunk can't create snapshot."
-                       << "ChunkID: " << chunkId_
-                       << ",request sn: " << sn
-                       << ",chunk sn: " << metaPage_.sn;
-            return CSErrorCode::StatusConflictError;
-        }
-
-        // 创建快照
-        ChunkOptions options;
-        options.id = chunkId_;
-        options.sn = metaPage_.sn;
-        options.baseDir = baseDir_;
-        options.chunkSize = size_;
-        options.pageSize = pageSize_;
-        options.metric = metric_;
-        snapshot_ = new(std::nothrow) CSSnapshot(lfs_,
-                                                 chunkFilePool_,
-                                                 options);
-        CHECK(snapshot_ != nullptr) << "Failed to new CSSnapshot!";
-        CSErrorCode errorCode = snapshot_->Open(true);
-        if (errorCode != CSErrorCode::Success) {
-            delete snapshot_;
-            snapshot_ = nullptr;
-            LOG(ERROR) << "Create snapshot failed."
-                       << "ChunkID: " << chunkId_
-                       << ",request sn: " << sn
-                       << ",chunk sn: " << metaPage_.sn;
-            return errorCode;
-        }
+        LOG(ERROR) << "No snapshot";
+        done->res_ = CSErrorCode::BackwardRequestError;
+        return CSErrorCode::BackwardRequestError;
     }
     // 如果请求版本号大于当前chunk版本号，需要更新metapage
     if (sn > metaPage_.sn) {
-        ChunkFileMetaPage tempMeta = metaPage_;
-        tempMeta.sn = sn;
-        CSErrorCode errorCode = updateMetaPage(&tempMeta);
-        if (errorCode != CSErrorCode::Success) {
-            LOG(ERROR) << "Update metapage failed."
-                       << "ChunkID: " << chunkId_
-                       << ",request sn: " << sn
-                       << ",chunk sn: " << metaPage_.sn;
-            return errorCode;
-        }
-        metaPage_.sn = tempMeta.sn;
+        LOG(ERROR) << "No snapshot";
+        done->res_ = CSErrorCode::BackwardRequestError;
+        return CSErrorCode::BackwardRequestError;
     }
     // 判断是否要cow,若是先将数据拷贝到快照文件
     if (needCow(sn)) {
-        CSErrorCode errorCode = copy2Snapshot(offset, length);
-        if (errorCode != CSErrorCode::Success) {
-            LOG(ERROR) << "Copy data to snapshot failed."
-                        << "ChunkID: " << chunkId_
-                        << ",request sn: " << sn
-                        << ",chunk sn: " << metaPage_.sn;
-            return errorCode;
-        }
+        LOG(ERROR) << "No snapshot";
+        done->res_ = CSErrorCode::BackwardRequestError;
+        return CSErrorCode::BackwardRequestError;
     }
-    int rc = writeData(buf, offset, length);
-    if (rc < 0) {
-        LOG(ERROR) << "Write data to chunk file failed."
-                   << "ChunkID: " << chunkId_
-                   << ",request sn: " << sn
-                   << ",chunk sn: " << metaPage_.sn;
-        return CSErrorCode::InternalError;
-    }
-    // 如果是clone chunk会更新bitmap
-    CSErrorCode errorCode = flush();
-    if (errorCode != CSErrorCode::Success) {
-        LOG(ERROR) << "Write data to chunk file failed."
-                   << "ChunkID: " << chunkId_
-                   << ",request sn: " << sn
-                   << ",chunk sn: " << metaPage_.sn;
-        return errorCode;
-    }
+
+    doneGuard.release();
+    writeData(buf, offset, length, done);
+
     return CSErrorCode::Success;
 }
 
@@ -413,7 +352,7 @@ CSErrorCode CSChunkFile::Paste(const char * buf, off_t offset, size_t length) {
     for (auto& range : uncopiedRange) {
         pasteOff = range.beginIndex * pageSize_;
         pasteSize = (range.endIndex - range.beginIndex + 1) * pageSize_;
-        int rc = writeData(buf + (pasteOff - offset), pasteOff, pasteSize);
+        int rc = writeData(buf + (pasteOff - offset), pasteOff, pasteSize, nullptr);
         if (rc < 0) {
             LOG(ERROR) << "Paste data to chunk failed."
                        << "ChunkID: " << chunkId_

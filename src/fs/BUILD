@@ -14,17 +14,24 @@
 #  limitations under the License.
 #
 
+COPTS = [
+    "-std=c++14",
+]
+
 cc_library(
     name = "lfs",
     srcs = glob([
                 "*.cpp",
                 "ext4_filesystem_impl.h",
                 "ext4_util.h",
-                "wrap_posix.h"
+                "wrap_posix.h",
+                "async_closure.h"
            ]),
     hdrs = ["local_filesystem.h","fs_common.h"],
+    copts = COPTS,
     linkopts = ([
-        "-std=c++11",
+        "-std=c++14",
+        "-laio",
     ]),
     deps = [
                 "//src/common:curve_common",

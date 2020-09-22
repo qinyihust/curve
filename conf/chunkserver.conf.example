@@ -123,6 +123,10 @@ s3.config_path=conf/s3.conf
 #
 # 是否开启使用renameat2，ext4内核3.15以后开始支持
 fs.enable_renameat2=true
+# 是否使用epoll
+fs.enable_epoll=true
+# 每个chunkserver的aio的maxevent深度
+fs.max_event=128
 
 #
 # metrics settings

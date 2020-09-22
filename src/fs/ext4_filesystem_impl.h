@@ -33,10 +33,29 @@
 #include "src/fs/local_filesystem.h"
 #include "src/fs/wrap_posix.h"
 
+#include "src/common/concurrent/concurrent.h"
+#include "src/fs/async_closure.h"
+
 const int MAX_RETYR_TIME = 3;
 
 namespace curve {
 namespace fs {
+
+class IoTask {
+ public:
+    IoTask(int fd, bool isRead, char* buf, off_t offset,
+           size_t length, void* done)
+        : fd_(fd), isRead_(isRead), buf_(buf),
+          offset_(offset), length_(length), done_(done){};
+
+    int fd_;
+    bool isRead_;
+    char* buf_;
+    off_t offset_;
+    size_t length_;
+    void* done_;
+};
+
 class Ext4FileSystemImpl : public LocalFileSystem {
  public:
     virtual ~Ext4FileSystemImpl();
@@ -44,6 +63,7 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     void SetPosixWrapper(std::shared_ptr<PosixWrapper> wrapper);
 
     int Init(const LocalFileSystemOption& option) override;
+    int Uninit() override;
     int Statfs(const string& path, struct FileSystemInfo* info) override;
     int Open(const string& path, int flags) override;
     int Close(int fd) override;
@@ -53,26 +73,42 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     bool FileExists(const string& filePath) override;
     int List(const string& dirPath, vector<std::string>* names) override;
     int Read(int fd, char* buf, uint64_t offset, int length) override;
-    int Write(int fd, const char* buf, uint64_t offset, int length) override;
-    int Write(int fd, butil::IOBuf buf, uint64_t offset, int length) override;
+    int Write(int fd, const char *buf, uint64_t offset, int length) override;
+    int WriteAsync(int fd, const char *buf, uint64_t offset,
+                   int length, void *done);
     int Append(int fd, const char* buf, int length) override;
-    int Fallocate(int fd, int op, uint64_t offset,
-                  int length) override;
+    int Fallocate(int fd, int op, uint64_t offset, int length) override;
     int Fstat(int fd, struct stat* info) override;
     int Fsync(int fd) override;
 
  private:
     explicit Ext4FileSystemImpl(std::shared_ptr<PosixWrapper>);
-    int DoRename(const string& oldPath,
-                 const string& newPath,
+    int DoRename(const string& oldPath, const string& newPath,
                  unsigned int flags) override;
     bool CheckKernelVersion();
+    void BatchSubmit(std::deque<IoTask *> *batchIo);
+    void IoSubmitter();
+    void ReapIo();
+    void ReapIoWithoutEpoll();
+    void ReapIoWithEpoll();
 
  private:
     static std::shared_ptr<Ext4FileSystemImpl> self_;
     static std::mutex mutex_;
     std::shared_ptr<PosixWrapper> posixWrapper_;
     bool enableRenameat2_;
+    bool enableEpoll_;
+    int maxEvents_;
+    io_context_t ctx_;
+    std::thread th_;
+    std::thread submitTh_;
+    std::mutex submitMutex_;
+    std::deque<IoTask*> tasks_;
+    std::atomic<int> nrFlyingIo_;
+    bool stop_;
+    int efd_;
+    int epfd_;
+    struct epoll_event epevent_;
 };
 
 }  // namespace fs

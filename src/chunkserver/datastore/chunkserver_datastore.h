@@ -39,6 +39,7 @@
 #include "src/chunkserver/datastore/chunkserver_chunkfile.h"
 #include "src/chunkserver/datastore/file_pool.h"
 #include "src/fs/local_filesystem.h"
+#include "src/fs/async_closure.h"
 
 namespace curve {
 namespace chunkserver {
@@ -208,23 +209,12 @@ class CSDataStore {
      */
     virtual CSErrorCode WriteChunk(ChunkID id,
                                 SequenceNum sn,
-                                const butil::IOBuf& buf,
+                                const char* buf,
                                 off_t offset,
                                 size_t length,
                                 uint32_t* cost,
+                                ReqClosure *done,
                                 const std::string & cloneSourceLocation = "");
-
-    // Deprecated, only use for unit & integration test
-    virtual CSErrorCode WriteChunk(
-        ChunkID id, SequenceNum sn, const char* buf, off_t offset,
-        size_t length, uint32_t* cost,
-        const std::string& cloneSourceLocation = "") {
-        butil::IOBuf data;
-        data.append_user_data(const_cast<char*>(buf), length, TrivialDeleter);
-
-        return WriteChunk(id, sn, data, offset, length, cost,
-                          cloneSourceLocation);
-    }
 
     /**
      * 创建克隆的Chunk，chunk中记录数据源位置信息

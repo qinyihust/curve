@@ -32,6 +32,7 @@
 #include <dirent.h>
 #include <linux/fs.h>
 #include <string>
+#include <libaio.h>
 
 namespace curve {
 namespace fs {
@@ -59,6 +60,11 @@ class PosixWrapper {
                            const void *buf,
                            size_t count,
                            off_t offset);
+    virtual int iosetup(int maxevents, io_context_t *ctxp);
+    virtual int iodestroy(io_context_t ctx);
+    virtual int iosubmit(io_context_t ctx, int64_t nr, struct iocb *ios[]);
+    virtual int iogetevents(io_context_t ctx_id, int64_t min_nr, int64_t nr,
+                            struct io_event *events, struct timespec *timeout);
     virtual int fstat(int fd, struct stat *buf);
     virtual int fallocate(int fd, int mode, off_t offset, off_t len);
     virtual int fsync(int fd);

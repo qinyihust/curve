@@ -30,7 +30,7 @@ COPTS = [
     "-Woverloaded-virtual",
     "-Wnon-virtual-dtor",
     "-Wno-missing-field-initializers",
-    "-std=c++11",
+    "-std=c++14",
 ]
 
 cc_library(
@@ -46,7 +46,7 @@ cc_library(
         "//external:glog",
         "//external:brpc",
         "//external:butil",
-        "//src/common/concurrent:curve_concurrent"
+        "//src/common/concurrent:curve_concurrent",
     ],
 )
 

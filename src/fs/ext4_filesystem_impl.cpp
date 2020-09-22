@@ -26,6 +26,7 @@
 #include <linux/version.h>
 #include <dirent.h>
 #include <brpc/server.h>
+#include <sys/eventfd.h>
 
 #include "src/common/string_util.h"
 #include "src/fs/ext4_filesystem_impl.h"
@@ -118,6 +119,229 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
         if (!CheckKernelVersion())
             return -1;
     }
+
+    maxEvents_ = option.maxEvents;
+    enableEpoll_ = option.enableEpoll;
+    LOG(INFO) << "Init libaio, maxEvents = " << option.maxEvents
+              << ", enableEpoll = " << option.enableEpoll;
+
+    if (maxEvents_ <= 0) {
+        LOG(ERROR) << "enableaio enable coroutine but maxevent <= 0"
+                    << ", maxEvents = " << maxEvents_;
+        return -1;
+    }
+    memset(&ctx_, 0, sizeof(ctx_));
+    int ret = posixWrapper_->iosetup(maxEvents_, &ctx_);
+    if (ret != 0) {
+        LOG(ERROR) << "iosetup fail :" << strerror(errno);
+        return -errno;
+    }
+
+    if (enableEpoll_) {
+        efd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        if (-1 == efd_) {
+            LOG(ERROR) << "failed to eventfd ";
+            return -1;
+        }
+
+        epfd_ = epoll_create(1);
+        if (-1 == epfd_) {
+            LOG(ERROR) << "failed to open epoll_create ";
+            return -1;
+        }
+
+        epevent_.events = EPOLLIN | EPOLLET;
+        epevent_.data.ptr = NULL;
+        if (epoll_ctl(epfd_, EPOLL_CTL_ADD, efd_, &epevent_) != 0) {
+            LOG(ERROR) << "failed to open epoll_ctl ";
+            return -1;
+        }
+    }
+
+    stop_ = false;
+    submitTh_ =
+        std::move(std::thread(&Ext4FileSystemImpl::IoSubmitter, this));
+    th_ = std::move(std::thread(&Ext4FileSystemImpl::ReapIo, this));
+
+    LOG(INFO) << "ext4 filesystem use aio";
+
+    return 0;
+}
+
+void Ext4FileSystemImpl::BatchSubmit(std::deque<IoTask *> *batchIo) {
+    int size = batchIo->size();
+    int i = 0;
+    iocb *iocbs[size];
+
+    for (i = 0; i < size; ++i) {
+        iocbs[i] = new iocb;
+        IoTask *task = batchIo->front();
+        if (task->isRead_)
+            io_prep_pread(iocbs[i], task->fd_, task->buf_, task->length_,
+                          task->offset_);
+        else
+            io_prep_pwrite(iocbs[i], task->fd_, task->buf_, task->length_,
+                           task->offset_);
+        if (enableEpoll_)
+	    io_set_eventfd(iocbs[i], efd_);
+
+        iocbs[i]->data = (void *)task->done_;
+        batchIo->pop_front();
+        delete task;
+    }
+
+    int ret = posixWrapper_->iosubmit(ctx_, size, iocbs);
+    while (ret == -EAGAIN) {
+        LOG(ERROR) << "failed to submit IO with EAGAIN";
+        usleep(100);
+        ret = posixWrapper_->iosubmit(ctx_, size, iocbs);
+    }
+    if (ret < 0)
+        LOG(FATAL) << "failed to submit libaio, errno: " << strerror(errno);
+    nrFlyingIo_.fetch_add(size);
+    //LOG(INFO) << size << " IO submitted, flying IO number=" << nrFlyingIo_;
+}
+
+void Ext4FileSystemImpl::IoSubmitter() {
+    LOG(INFO) << "start IO submitter thread";
+    while (!stop_) {
+        // sleep if I/O depth is overload
+        if (nrFlyingIo_ >= maxEvents_) {
+            LOG(INFO) << "flying IO number=" << nrFlyingIo_ << ", go to sleep";
+            usleep(100);
+            continue;
+        }
+
+        int nrSubmit = 0;
+        int nrFlying = nrFlyingIo_;
+        std::deque<IoTask *> batchIo;
+        submitMutex_.lock();
+        if (tasks_.empty()) {
+            submitMutex_.unlock();
+            usleep(100);
+            continue;
+        }
+
+        if (tasks_.size() + nrFlying > maxEvents_) {
+            nrSubmit = maxEvents_ - nrFlying;
+            while (nrSubmit > 0) {
+                batchIo.push_back(tasks_.front());
+                tasks_.pop_front();
+                --nrSubmit;
+            }
+        } else {
+            batchIo.swap(tasks_);
+        }
+        submitMutex_.unlock();
+
+        BatchSubmit(&batchIo);
+    }
+}
+
+void Ext4FileSystemImpl::ReapIoWithEpoll() {
+    LOG(INFO) << "start reapio thread with epoll";
+    io_event *events = new io_event[maxEvents_];
+    while (!stop_) {
+        int waitTimeMs = 100;
+	int ret = epoll_wait(epfd_, &epevent_, 1, waitTimeMs);
+        if (ret < 0) {
+            LOG(ERROR) << "epoll_wait error: " << strerror(errno);
+            continue;
+        } else if (ret == 0) {
+	    continue;
+        }
+
+        uint64_t finishIoCount = 0;
+        ret = read(efd_, &finishIoCount, sizeof(finishIoCount));
+        if (ret != sizeof(finishIoCount)) {
+            LOG(ERROR) << "failed to efd read error, ret = " << ret;
+            return;
+        } else {
+	    //LOG(INFO) << "going to reap " << finishIoCount << " IOs";
+        }
+
+        while (finishIoCount > 0) {
+            timespec time = {0, 100000};  // 100us
+            int reapNum = maxEvents_ > finishIoCount
+                                    ? finishIoCount : maxEvents_;
+            int eventNum = posixWrapper_->iogetevents(ctx_, 1, reapNum,
+                                    events, &time);
+            if (eventNum <= 0) {
+                if (eventNum < 0) {
+                    LOG(ERROR) << "iogetevents failed, ret = " << eventNum;
+                }
+                continue;
+            }
+               
+            for (int i = 0; i < eventNum; i++) {
+                delete events[i].obj;
+                ReqClosure *done =
+                    reinterpret_cast<ReqClosure *> (events[i].data);
+                
+                brpc::ClosureGuard doneGuard(done);
+                done->res_ = events[i].res2;
+                if (events[i].res2)
+                    LOG(ERROR) << "res = " << events[i].res
+                              << ", res2 = " << events[i].res2;
+                nrFlyingIo_--;
+            }
+            //LOG(INFO) << eventNum << " IOs reaped, flying IO number=" << nrFlyingIo_;
+            finishIoCount -= eventNum;
+        }
+    }
+    free(events);
+    LOG(INFO) << "end reapio thread";
+}
+
+void Ext4FileSystemImpl::ReapIoWithoutEpoll() {
+    LOG(INFO) << "start reapio thread with out epoll";
+    while (!stop_) {
+        io_event event;
+        timespec time = {0, 1000000};  // 1000us
+        int ret = posixWrapper_->iogetevents(ctx_, 1, 1,
+                                &event, &time);
+        if (ret <= 0) {
+            if (ret < 0) {
+                LOG(ERROR) << "iogetevents failed, ret = " << ret;
+            }
+            continue;
+        }
+
+        delete event.obj;
+        {
+            ReqClosure *done = reinterpret_cast<ReqClosure *> (event.data);
+            brpc::ClosureGuard doneGuard(done);
+            done->res_ = event.res2;
+            if (event.res2)
+                LOG(ERROR) << "res = " << event.res << ", res2 = " << event.res2;
+            // LOG(INFO) << "get event ctx = " << event.data << ", ret = " <<
+            // ret;
+            nrFlyingIo_--;
+        }
+        //LOG(INFO) << "1 IO reaped, cb run time=" <<  endTime - startTime 
+        //          << ", flying IO number=" << nrFlyingIo_;
+    }
+    LOG(INFO) << "end reapio thread";
+}
+
+void Ext4FileSystemImpl::ReapIo() {
+    if (enableEpoll_) {
+        ReapIoWithEpoll();
+    } else {
+        ReapIoWithoutEpoll();
+    }
+}
+
+int Ext4FileSystemImpl::Uninit() {
+    stop_ = true;
+
+    th_.join();
+    submitTh_.join();
+    if (enableEpoll_) {
+        close(epfd_);
+    }
+    posixWrapper_->iodestroy(ctx_);
+
     return 0;
 }
 
@@ -303,17 +527,22 @@ int Ext4FileSystemImpl::Read(int fd,
     return length - remainLength;
 }
 
-int Ext4FileSystemImpl::Write(int fd,
-                              const char *buf,
-                              uint64_t offset,
+
+int Ext4FileSystemImpl::WriteAsync(int fd, const char *buf, uint64_t offset,
+                                  int length, void *done) {
+    IoTask *task = new IoTask(fd, false, const_cast<char *>(buf), offset, length, done);
+    submitMutex_.lock();
+    tasks_.push_back(task);
+    submitMutex_.unlock();
+}
+
+int Ext4FileSystemImpl::Write(int fd, const char *buf, uint64_t offset,
                               int length) {
     int remainLength = length;
     int relativeOffset = 0;
     int retryTimes = 0;
     while (remainLength > 0) {
-        int ret = posixWrapper_->pwrite(fd,
-                                        buf + relativeOffset,
-                                        remainLength,
+        int ret = posixWrapper_->pwrite(fd, buf + relativeOffset, remainLength,
                                         offset);
         if (ret < 0) {
             if (errno == EINTR && retryTimes < MAX_RETYR_TIME) {
@@ -327,33 +556,6 @@ int Ext4FileSystemImpl::Write(int fd,
         offset += ret;
         relativeOffset += ret;
     }
-    return length;
-}
-
-int Ext4FileSystemImpl::Write(int fd,
-                              butil::IOBuf buf,
-                              uint64_t offset,
-                              int length) {
-    int remainLength = length;
-    int relativeOffset = 0;
-    int retryTimes = 0;
-
-    while (remainLength > 0) {
-        ssize_t ret = buf.pcut_into_file_descriptor(fd, offset, remainLength);
-        if (ret < 0) {
-            if (errno == EINTR || retryTimes < MAX_RETYR_TIME) {
-                ++retryTimes;
-                continue;
-            }
-            LOG(ERROR) << "IOBuf::pcut_into_file_descriptor failed: "
-                       << strerror(errno);
-            return -errno;
-        }
-
-        remainLength -= ret;
-        offset += ret;
-    }
-
     return length;
 }
 

@@ -380,6 +380,7 @@ void RandWriteChunk(Peer leader,
         uint64_t pageIndex = butil::fast_rand_less_than(kChunkSize / kPageSize);
         request.set_offset(pageIndex * kPageSize);
 
+        LOG(INFO) << "send write requset " << &request << ", response " << &response;
         stub.WriteChunk(&cntl, &request, &response, nullptr);
 
         if (cntl.Failed()) {
@@ -387,6 +388,7 @@ void RandWriteChunk(Peer leader,
             ret = -1;
         }
 
+        LOG(INFO) << "recieve repsonse " << &response << ", ret=" << response.status();
         if (response.status() != CHUNK_OP_STATUS::CHUNK_OP_STATUS_SUCCESS) {
             LOG(INFO) << "write failed: "
                       << CHUNK_OP_STATUS_Name(response.status());
@@ -490,7 +492,6 @@ void CreateCloneChunk(Peer leader,
 /**
  * chunk不是事先在FilePool分配好的
  */
-
 // 多线程并发随机读同一个chunk
 TEST_F(ChunkServerConcurrentNotFromFilePoolTest, RandReadOneChunk) {
     uint64_t chunkId = 1;
@@ -542,7 +543,7 @@ TEST_F(ChunkServerConcurrentNotFromFilePoolTest, RandReadOneChunk) {
 // 多线程并发随机写同一个chunk
 TEST_F(ChunkServerConcurrentNotFromFilePoolTest, RandWriteOneChunk) {
     const int kThreadNum = 10;
-    const int kMaxLoop = 200;
+    const int kMaxLoop = 100;
     ChunkID chunkIdRange = 1;
     const int sn = 1;
 
@@ -1464,6 +1465,5 @@ TEST_F(ChunkServerConcurrentFromFilePoolTest, RandWriteMultiChunkWithCOW) {
         threads[j].join();
     }
 }
-
 }  // namespace chunkserver
 }  // namespace curve

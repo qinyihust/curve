@@ -124,6 +124,10 @@ int ChunkServer::Run(int argc, char** argv) {
     LocalFileSystemOption lfsOption;
     LOG_IF(FATAL, !conf.GetBoolValue(
         "fs.enable_renameat2", &lfsOption.enableRenameat2));
+    LOG_IF(FATAL, !conf.GetIntValue(
+        "fs.max_event", &lfsOption.maxEvents));
+    LOG_IF(FATAL, !conf.GetBoolValue(
+        "fs.enable_epoll", &lfsOption.enableEpoll));
     LOG_IF(FATAL, 0 != fs->Init(lfsOption))
         << "Failed to initialize local filesystem module!";
 
