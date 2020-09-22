@@ -26,6 +26,7 @@
 #include <future>       // NOLINT
 #include <queue>        // NOLINT
 #include <utility>
+#include <functional>
 #include "bthread/mutex.h"
 #include "bthread/condition_variable.h"
 

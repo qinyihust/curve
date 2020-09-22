@@ -133,8 +133,8 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
               << ", enableAio = " << option.enableAio
               << ", maxEvents = " << option.maxEvents
               << ", enableEpool = " << option.enableEpool;
-    // 使用coroutine
-    if (enableAio_ && enableCoroutine_) {
+    // 使用libaio
+    if (enableAio_) {
         if (maxEvents_ <= 0) {
             LOG(ERROR) << "enableaio enable coroutine but maxevent <= 0"
                        << ", maxEvents = " << maxEvents_;
@@ -168,10 +168,12 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
             }
         }
 
-
         stop_ = false;
+        submitTh_ =
+            std::move(std::thread(&Ext4FileSystemImpl::IoSubmitter, this));
         th_ = std::move(std::thread(&Ext4FileSystemImpl::ReapIo, this));
-        LOG(INFO) << "ext4 filesystem use aio and conroutine";
+
+        LOG(INFO) << "ext4 filesystem use aio";
     } else {
         LOG(INFO) << "use pread pwrite.";
     }
@@ -179,21 +181,96 @@ int Ext4FileSystemImpl::Init(const LocalFileSystemOption& option) {
     return 0;
 }
 
+void Ext4FileSystemImpl::BatchSubmit(std::deque<IoTask *> *batchIo) {
+    int size = batchIo->size();
+    int i = 0;
+    iocb *iocbs[size];
+
+    for (i = 0; i < size; ++i) {
+        iocbs[i] = new iocb;
+        IoTask *task = batchIo->front();
+        if (task->isRead_)
+            io_prep_pread(iocbs[i], task->fd_, task->buf_, task->length_,
+                          task->offset_);
+        else
+            io_prep_pwrite(iocbs[i], task->fd_, task->buf_, task->length_,
+                           task->offset_);
+        if (enableEpool_)
+	    io_set_eventfd(iocbs[i], efd_);
+
+        iocbs[i]->data = (void *)task->done_;
+        batchIo->pop_front();
+        delete task;
+    }
+
+    int ret = posixWrapper_->iosubmit(ctx_, size, iocbs);
+    while (ret == -EAGAIN) {
+        LOG(ERROR) << "failed to submit IO with EAGAIN";
+        usleep(100);
+        ret = posixWrapper_->iosubmit(ctx_, size, iocbs);
+    }
+    if (ret < 0)
+        LOG(FATAL) << "failed to submit libaio, errno: " << strerror(errno);
+    nrFlyingIo_.fetch_add(size);
+    //LOG(INFO) << size << " IO submitted, flying IO number=" << nrFlyingIo_;
+}
+
+void Ext4FileSystemImpl::IoSubmitter() {
+    LOG(INFO) << "start IO submitter thread";
+    while (!stop_) {
+        // sleep if I/O depth is overload
+        if (nrFlyingIo_ >= maxEvents_) {
+            LOG(INFO) << "flying IO number=" << nrFlyingIo_ << ", go to sleep";
+            usleep(100);
+            continue;
+        }
+
+        int nrSubmit = 0;
+        int nrFlying = nrFlyingIo_;
+        std::deque<IoTask *> batchIo;
+        submitMutex_.lock();
+        if (tasks_.empty()) {
+            submitMutex_.unlock();
+            usleep(100);
+            continue;
+        }
+
+        if (tasks_.size() + nrFlying > maxEvents_) {
+            nrSubmit = maxEvents_ - nrFlying;
+            while (nrSubmit > 0) {
+                batchIo.push_back(tasks_.front());
+                tasks_.pop_front();
+                --nrSubmit;
+            }
+        } else {
+            batchIo.swap(tasks_);
+        }
+        submitMutex_.unlock();
+
+        BatchSubmit(&batchIo);
+    }
+}
+
 void Ext4FileSystemImpl::ReapIoWithEpoll() {
     LOG(INFO) << "start reapio thread with epoll";
     io_event *events = new io_event[maxEvents_];
     while (!stop_) {
-        int waitTimeMs = 500;
-        if (epoll_wait(epfd_, &epevent_, 1, waitTimeMs) != 1) {
-            // LOG(INFO) << "failed to epoll_wait error ";
+        int waitTimeMs = 100;
+	int ret = epoll_wait(epfd_, &epevent_, 1, waitTimeMs);
+        if (ret < 0) {
+            LOG(ERROR) << "epoll_wait error: " << strerror(errno);
             continue;
+        } else if (ret == 0) {
+	    continue;
         }
 
         uint64_t finishIoCount = 0;
-        int ret = read(efd_, &finishIoCount, sizeof(finishIoCount));
+        ret = read(efd_, &finishIoCount, sizeof(finishIoCount));
         if (ret != sizeof(finishIoCount)) {
             LOG(ERROR) << "failed to efd read error, ret = " << ret;
             return;
+        } else {
+	    //LOG(INFO) << "going to reap " << finishIoCount << " IOs";
         }
 
         while (finishIoCount > 0) {
@@ -212,27 +289,20 @@ void Ext4FileSystemImpl::ReapIoWithEpoll() {
                 }
                 continue;
             }
-
+               
             for (int i = 0; i < eventNum; i++) {
-                CoRoutineContext *ctx =
-                        reinterpret_cast<CoRoutineContext *>(events[i].data);
-                ctx->res = events[i].res;
-                ctx->res2 = events[i].res2;
-                // LOG(INFO) << "res = " << event.res
-                //           << ", res2 = " << event.res2
-                //           << ", waiter = " << ctx->waiter;
-                startTime = common::TimeUtility::GetTimeofDayUs();
-
-                ctx->butexWakeTime = startTime;
-                ret = bthread::butex_wake(ctx->waiter);
-                while (ret == 0) {
-                    ret = bthread::butex_wake(ctx->waiter);
-                    // LOG(INFO) << "wake ret = " << ret;
-                }
-                endTime = common::TimeUtility::GetTimeofDayUs();
-                metric_.butexWakeLatancy << endTime - startTime;
-                // LOG(INFO) << "wake butex : " << ctx->waiter;
+                delete events[i].obj;
+                ReqClosure *done =
+                    reinterpret_cast<ReqClosure *> (events[i].data);
+                
+                brpc::ClosureGuard doneGuard(done);
+                done->res_ = events[i].res2;
+                if (events[i].res2)
+                    LOG(ERROR) << "res = " << events[i].res
+                              << ", res2 = " << events[i].res2;
+                nrFlyingIo_--;
             }
+            //LOG(INFO) << eventNum << " IOs reaped, flying IO number=" << nrFlyingIo_;
             finishIoCount -= eventNum;
         }
     }
@@ -258,25 +328,21 @@ void Ext4FileSystemImpl::ReapIoWithoutEpoll() {
             continue;
         }
 
-        // LOG(INFO) << "get event ctx = " << event.data << ", ret = " << ret;
-        CoRoutineContext *ctx =
-                        reinterpret_cast<CoRoutineContext *>(event.data);
-        ctx->res = event.res;
-        ctx->res2 = event.res2;
-        // bthread_usleep(100);
-        // LOG(INFO) << "res = " << event.res << ", res2 = " << event.res2
-        //           << ", waiter = " << ctx->waiter;
+        delete event.obj;
         startTime = common::TimeUtility::GetTimeofDayUs();
-
-        ctx->butexWakeTime = startTime;
-        ret = bthread::butex_wake(ctx->waiter);
-        while (ret == 0) {
-            ret = bthread::butex_wake(ctx->waiter);
-            // LOG(INFO) << "wake ret = " << ret;
+        {
+            ReqClosure *done = reinterpret_cast<ReqClosure *> (event.data);
+            brpc::ClosureGuard doneGuard(done);
+            done->res_ = event.res2;
+            if (event.res2)
+                LOG(ERROR) << "res = " << event.res << ", res2 = " << event.res2;
+            // LOG(INFO) << "get event ctx = " << event.data << ", ret = " <<
+            // ret;
+            nrFlyingIo_--;
         }
         endTime = common::TimeUtility::GetTimeofDayUs();
-        metric_.butexWakeLatancy << endTime - startTime;
-        // LOG(INFO) << "wake butex : " << ctx->waiter;
+        //LOG(INFO) << "1 IO reaped, cb run time=" <<  endTime - startTime 
+        //          << ", flying IO number=" << nrFlyingIo_;
     }
     LOG(INFO) << "end reapio thread";
 }
@@ -314,20 +380,20 @@ void Ext4FileSystemMetric::PrintMetric() {
 }
 
 void Ext4FileSystemMetric::PrintOneMetric(bvar::LatencyRecorder &record) {
-    LOG(INFO) << record.latency_name()
-        << "\navg: " << record.latency()
-        << "\nmax: " << record.max_latency()
-        << "\n50percentile: " << record.latency_percentile(0.5)
-        << "\n80percentile: " << record.latency_percentile(0.8)
-        << "\n90percentile: " << record.latency_percentile(0.9)
-        << "\n99percentile: " << record.latency_percentile(0.99)
-        << "\n999percentile: " << record.latency_percentile(0.999);
+    LOG(INFO) << record.latency_name() << "\navg: " << record.latency()
+              << "\nmax: " << record.max_latency()
+              << "\n50percentile: " << record.latency_percentile(0.5)
+              << "\n80percentile: " << record.latency_percentile(0.8)
+              << "\n90percentile: " << record.latency_percentile(0.9)
+              << "\n99percentile: " << record.latency_percentile(0.99)
+              << "\n999percentile: " << record.latency_percentile(0.999);
 }
 
 int Ext4FileSystemImpl::Uninit() {
     stop_ = true;
-    if (enableAio_ && enableCoroutine_) {
+    if (enableAio_) {
         th_.join();
+        submitTh_.join();
         if (enableEpool_) {
             close(epfd_);
         }
@@ -594,45 +660,46 @@ int Ext4FileSystemImpl::ReadCoroutine_(int fd,
     endTime = common::TimeUtility::GetTimeofDayUs();
     metric_.readButexDestroyLatancy << endTime - startTime;
     if (ctx.res < 0) {
-        LOG(ERROR) << "data read res = " << ctx.res
-                << ", res2 = " << ctx.res2
-                << ", offset = " << offset
-                << ", len = " << length
-                << ", buf = " << reinterpret_cast<void *>(buf);
+        LOG(ERROR) << "data read res = " << ctx.res << ", res2 = " << ctx.res2
+                   << ", offset = " << offset << ", len = " << length
+                   << ", buf = " << reinterpret_cast<void *>(buf);
     }
 
     return ctx.res;
 }
 
-int Ext4FileSystemImpl::Write(int fd,
-                              const char *buf,
-                              uint64_t offset,
+int Ext4FileSystemImpl::WriteAsync(int fd, const char *buf, uint64_t offset,
+                                   int length, void *done) {
+    IoTask *task = new IoTask(fd, false, const_cast<char *>(buf), offset, length, done);
+    submitMutex_.lock();
+    tasks_.push_back(task);
+    submitMutex_.unlock();
+}
+
+int Ext4FileSystemImpl::Write(int fd, const char *buf, uint64_t offset,
                               int length) {
     uint64_t startTime = common::TimeUtility::GetTimeofDayUs();
     int ret;
-    if (enableCoroutine_) {
+    if (enableAio_ && enableCoroutine_) {
         ret = WriteCoroutine_(fd, buf, offset, length);
     } else {
         ret = WritePwrite_(fd, buf, offset, length);
     }
     uint64_t latancy = common::TimeUtility::GetTimeofDayUs() - startTime;
     metric_.totalWriteLatancy << latancy;
-    // LOG(INFO) << "latancy = " << latancy << ", max: " << metric_.totalWriteLatancy.max_latency();
+    // LOG(INFO) << "latancy = " << latancy << ", max: " <<
+    // metric_.totalWriteLatancy.max_latency();
 
     return ret;
 }
 
-int Ext4FileSystemImpl::WritePwrite_(int fd,
-                              const char *buf,
-                              uint64_t offset,
-                              int length) {
+int Ext4FileSystemImpl::WritePwrite_(int fd, const char *buf, uint64_t offset,
+                                     int length) {
     int remainLength = length;
     int relativeOffset = 0;
     int retryTimes = 0;
     while (remainLength > 0) {
-        int ret = posixWrapper_->pwrite(fd,
-                                        buf + relativeOffset,
-                                        remainLength,
+        int ret = posixWrapper_->pwrite(fd, buf + relativeOffset, remainLength,
                                         offset);
         if (ret < 0) {
             if (errno == EINTR && retryTimes < MAX_RETYR_TIME) {
@@ -649,10 +716,8 @@ int Ext4FileSystemImpl::WritePwrite_(int fd,
     return length;
 }
 
-int Ext4FileSystemImpl::WriteCoroutine_(int fd,
-                             const char *buf,
-                             uint64_t offset,
-                             int length) {
+int Ext4FileSystemImpl::WriteCoroutine_(int fd, const char *buf,
+                                        uint64_t offset, int length) {
     iocb aioIocb;
     iocb *aioIocbs[1];
     aioIocbs[0] = &aioIocb;

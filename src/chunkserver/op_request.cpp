@@ -30,6 +30,7 @@
 #include <memory>
 #include <string>
 
+#include "src/fs/async_closure.h"
 #include "src/chunkserver/copyset_node.h"
 #include "src/chunkserver/chunk_closure.h"
 #include "src/chunkserver/clone_manager.h"
@@ -37,6 +38,9 @@
 
 namespace curve {
 namespace chunkserver {
+
+using curve::fs::ReqClosure;
+using curve::fs::AsyncClosure;
 
 ChunkOpRequest::ChunkOpRequest() :
     datastore_(nullptr),
@@ -435,16 +439,33 @@ void ReadChunkRequest::ReadChunk() {
     }
 }
 
+void WriteChunkCb1(int ret, ::google::protobuf::Closure *done,
+                   WriteChunkRequest *req, char *writeBuf, uint64_t index) {
+    brpc::ClosureGuard doneGuard(done);
+    free(writeBuf);
+    if (0 == ret) {
+        req->response_->set_status(CHUNK_OP_STATUS::CHUNK_OP_STATUS_SUCCESS);
+        req->node_->UpdateAppliedIndex(index);
+    } else {
+        // 打快照那一刻是有可能出现旧版本的请求
+        // 返回错误给客户端，让客户端带新版本来重试
+        LOG(FATAL) << "invalid branch";
+    }
+    auto maxIndex =
+        (index > req->node_->GetAppliedIndex() ? index :
+                                                 req->node_->GetAppliedIndex());
+    
+    req->response_->set_appliedindex(maxIndex);
+    //LOG(INFO) << "done Writechunk onApply cb1, response=" << req->response_;
+}
+
 void WriteChunkRequest::OnApply(uint64_t index,
                                 ::google::protobuf::Closure *done) {
-    brpc::ClosureGuard doneGuard(done);
     uint32_t cost;
 
     std::string  cloneSourceLocation;
     if (existCloneInfo(request_)) {
-        auto func = ::curve::common::LocationOperator::GenerateCurveLocation;
-        cloneSourceLocation =  func(request_->clonefilesource(),
-                            request_->clonefileoffset());
+        LOG(FATAL) << "invalid branch";
     }
 
     char *writeBuf = nullptr;
@@ -454,59 +475,34 @@ void WriteChunkRequest::OnApply(uint64_t index,
         << "posix_memalign writeBuffer failed " << strerror(ret1);
     ret1 = cntl_->request_attachment().copy_to(writeBuf, request_->size(), 0);
     CHECK(request_->size() == ret1) << "copy data fail, ret = " << ret1;
-    // memcpy(writeBuf, cntl_->request_attachment().to_string().c_str(), 
-    //             request_->size());
 
-    auto ret = datastore_->WriteChunk(request_->chunkid(),
-                                      request_->sn(),
-                                      // cntl_->request_attachment().to_string().c_str(),  //NOLINT
-                                      writeBuf,
-                                      request_->offset(),
-                                      request_->size(),
-                                      &cost,
-                                      cloneSourceLocation);
+    auto callback =
+        new AsyncClosure<decltype(WriteChunkCb1) *, ::google::protobuf::Closure *,
+                        WriteChunkRequest *, char *, uint64_t>(
+            WriteChunkCb1, done, this, writeBuf, index);
+    datastore_->WriteChunk(request_->chunkid(), request_->sn(), writeBuf,
+                           request_->offset(), request_->size(), &cost,
+                           callback, cloneSourceLocation);
+    //LOG(INFO) << "write chunk returned for request_ " << request_ 
+    //          << "response_" << response_ <<", this=" << this 
+    //          << ", this->request_=" << this->request_
+    //          << ", this->response_=" << this->response_;
+}
+
+void WriteChunkFromLogCb1(int ret, const ChunkRequest *request,
+                          char *writeBuf) {
     free(writeBuf);
-    if (CSErrorCode::Success == ret) {
-        response_->set_status(CHUNK_OP_STATUS::CHUNK_OP_STATUS_SUCCESS);
-        node_->UpdateAppliedIndex(index);
-    } else if (CSErrorCode::BackwardRequestError == ret) {
-        // 打快照那一刻是有可能出现旧版本的请求
-        // 返回错误给客户端，让客户端带新版本来重试
-        LOG(WARNING) << "write failed: "
-                     << " logic pool id: " << request_->logicpoolid()
-                     << " copyset id: " << request_->copysetid()
-                     << " chunkid: " << request_->chunkid()
-                     << " data size: " << request_->size()
-                     << " data store return: " << ret;
-        response_->set_status(
-            CHUNK_OP_STATUS::CHUNK_OP_STATUS_BACKWARD);
-    } else if (CSErrorCode::InternalError == ret ||
-               CSErrorCode::CrcCheckError == ret ||
-               CSErrorCode::FileFormatError == ret) {
-        /**
-         * internalerror一般是磁盘错误,为了防止副本不一致,让进程退出
-         * TODO(yyk): 当前遇到write错误直接fatal退出整个
-         * ChunkServer后期考虑仅仅标坏这个copyset，保证较好的可用性
-        */
-        LOG(FATAL) << "write failed: "
-                   << " logic pool id: " << request_->logicpoolid()
-                   << " copyset id: " << request_->copysetid()
-                   << " chunkid: " << request_->chunkid()
-                   << " data size: " << request_->size()
-                   << " data store return: " << ret;
-    } else {
+    if (0 == ret) {
+        //LOG(INFO) << "done Writechunk onApplyFromLog cb1, request=" << request;
+        return;
+    }  else {
         LOG(ERROR) << "write failed: "
-                   << " logic pool id: " << request_->logicpoolid()
-                   << " copyset id: " << request_->copysetid()
-                   << " chunkid: " << request_->chunkid()
-                   << " data size: " << request_->size()
-                   << " data store return: " << ret;
-        response_->set_status(
-            CHUNK_OP_STATUS::CHUNK_OP_STATUS_FAILURE_UNKNOWN);
+                   << " logic pool id: " << request->logicpoolid()
+                   << " copyset id: " << request->copysetid()
+                   << " chunkid: " << request->chunkid()
+                   << " data size: " << request->size()
+                   << " return: " << ret;
     }
-    auto maxIndex =
-        (index > node_->GetAppliedIndex() ? index : node_->GetAppliedIndex());
-    response_->set_appliedindex(maxIndex);
 }
 
 void WriteChunkRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
@@ -530,41 +526,13 @@ void WriteChunkRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
     CHECK(request.size() == ret1) << "copy data fail, ret = " << ret1;
     // memcpy(writeBuf, data.to_string().c_str(), request.size());
 
-    auto ret = datastore->WriteChunk(request.chunkid(),
-                                     request.sn(),
+    auto callback =
+        new AsyncClosure<decltype(WriteChunkFromLogCb1) *, const ChunkRequest *,
+                        char *>(WriteChunkFromLogCb1, &request, writeBuf);
+    auto ret = datastore->WriteChunk(request.chunkid(), request.sn(),
                                      // data.to_string().c_str(),
-                                     writeBuf,
-                                     request.offset(),
-                                     request.size(),
-                                     &cost,
-                                     cloneSourceLocation);
-    free(writeBuf);
-     if (CSErrorCode::Success == ret) {
-         return;
-     } else if (CSErrorCode::BackwardRequestError == ret) {
-        LOG(WARNING) << "write failed: "
-                     << " logic pool id: " << request.logicpoolid()
-                     << " copyset id: " << request.copysetid()
-                     << " chunkid: " << request.chunkid()
-                     << " data size: " << request.size()
-                     << " data store return: " << ret;
-    } else if (CSErrorCode::InternalError == ret ||
-               CSErrorCode::CrcCheckError == ret ||
-               CSErrorCode::FileFormatError == ret) {
-        LOG(FATAL) << "write failed: "
-                   << " logic pool id: " << request.logicpoolid()
-                   << " copyset id: " << request.copysetid()
-                   << " chunkid: " << request.chunkid()
-                   << " data size: " << request.size()
-                   << " data store return: " << ret;
-    } else {
-        LOG(ERROR) << "write failed: "
-                   << " logic pool id: " << request.logicpoolid()
-                   << " copyset id: " << request.copysetid()
-                   << " chunkid: " << request.chunkid()
-                   << " data size: " << request.size()
-                   << " data store return: " << ret;
-    }
+                                     writeBuf, request.offset(), request.size(),
+                                     &cost, callback, cloneSourceLocation);
 }
 
 void ReadSnapshotRequest::OnApply(uint64_t index,

@@ -21,7 +21,7 @@ cc_test(
         "peer_cluster.cpp",
         "chunkserver_concurrent_test.cpp",
     ]),
-    copts = ["-std=c++11"],
+    copts = ["-std=c++14"],
     deps = [
         "//external:braft",
         "//external:brpc",
@@ -46,7 +46,7 @@ cc_test(
         "peer_cluster.cpp",
         "chunkserver_basic_test.cpp",
     ]),
-    copts = ["-std=c++11"],
+    copts = ["-std=c++14"],
     deps = [
         "//external:braft",
         "//external:brpc",
@@ -58,6 +58,7 @@ cc_test(
         "//proto:chunkserver-cc-protos",
         "//src/chunkserver:chunkserver-test-lib",
         "//src/common:curve_common",
+        "//src/fs:lfs",
         "//test/chunkserver/datastore:chunkfilepool_helper",
         "//test/integration/common:integration-test-common",
         "@com_google_googletest//:gtest_main",
@@ -71,7 +72,7 @@ cc_test(
         "peer_cluster.cpp",
         "chunkserver_clone_recover.cpp",
     ]),
-    copts = ["-std=c++11"],
+    copts = ["-std=c++14"],
     deps = [
         "//external:braft",
         "//external:brpc",

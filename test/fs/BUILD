@@ -34,7 +34,7 @@ cc_test(
         ],
         exclude = ["ext4_read_write_test.cpp"]),
     copts = ([
-        "-std=c++11",
+        "-std=c++14",
     ]),
     deps = [
             "//src/fs:lfs",
@@ -50,7 +50,7 @@ cc_binary(
             "ext4_read_write_test.cpp",
         ]),
     copts = ([
-        "-std=c++11",
+        "-std=c++14",
     ]),
     deps = [
             "//src/fs:lfs",

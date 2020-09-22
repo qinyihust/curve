@@ -162,7 +162,7 @@ class ChunkOpRequest : public std::enable_shared_from_this<ChunkOpRequest> {
     int Propose(const ChunkRequest *request,
                 const butil::IOBuf *data);
 
- protected:
+ public:
     // chunk持久化接口
     std::shared_ptr<CSDataStore> datastore_;
     // 复制组

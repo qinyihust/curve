@@ -35,6 +35,7 @@
 #include "src/fs/local_filesystem.h"
 #include "src/fs/wrap_posix.h"
 #include "src/common/concurrent/concurrent.h"
+#include "src/fs/async_closure.h"
 
 const int MAX_RETYR_TIME = 3;
 
@@ -98,9 +99,23 @@ class Ext4FileSystemMetric {
     void PrintMetric();
 
  private:
-    void PrintOneMetric(bvar::LatencyRecorder &record);
+    void PrintOneMetric(bvar::LatencyRecorder& record);
 };
 
+class IoTask {
+ public:
+    IoTask(int fd, bool isRead, char* buf, off_t offset,
+           size_t length, void* done)
+        : fd_(fd), isRead_(isRead), buf_(buf),
+          offset_(offset), length_(length), done_(done){};
+
+    int fd_;
+    bool isRead_;
+    char* buf_;
+    off_t offset_;
+    size_t length_;
+    void* done_;
+};
 class Ext4FileSystemImpl : public LocalFileSystem {
  public:
     virtual ~Ext4FileSystemImpl();
@@ -118,19 +133,20 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     bool FileExists(const string& filePath) override;
     int List(const string& dirPath, vector<std::string>* names) override;
     int Read(int fd, char* buf, uint64_t offset, int length) override;
-    int Write(int fd, const char* buf, uint64_t offset, int length) override;
+    int Write(int fd, const char *buf, uint64_t offset, int length) override;
     int Append(int fd, const char* buf, int length) override;
-    int Fallocate(int fd, int op, uint64_t offset,
-                  int length) override;
+    int Fallocate(int fd, int op, uint64_t offset, int length) override;
     int Fstat(int fd, struct stat* info) override;
     int Fsync(int fd) override;
-
+    int WriteAsync(int fd, const char *buf, uint64_t offset,
+                   int length, void *done);
  private:
     explicit Ext4FileSystemImpl(std::shared_ptr<PosixWrapper>);
-    int DoRename(const string& oldPath,
-                 const string& newPath,
+    int DoRename(const string& oldPath, const string& newPath,
                  unsigned int flags) override;
     bool CheckKernelVersion();
+    void BatchSubmit(std::deque<IoTask *> *batchIo);
+    void IoSubmitter();
     void ReapIo();
     void ReapIoWithoutEpoll();
     void ReapIoWithEpoll();
@@ -150,6 +166,10 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     int maxEvents_;
     io_context_t ctx_;
     std::thread th_;
+    std::thread submitTh_;
+    std::mutex submitMutex_;
+    std::deque<IoTask*> tasks_;
+    std::atomic<int> nrFlyingIo_;
     bool stop_;
     int efd_;
     int epfd_;

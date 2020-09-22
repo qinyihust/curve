@@ -126,7 +126,7 @@ int ChunkServer::Run(int argc, char** argv) {
         "fs.enable_aio", &lfsOption.enableAio));
     LOG_IF(FATAL, !conf.GetIntValue(
         "fs.max_event", &lfsOption.maxEvents));
-    LOF_IF(FATAL, !conf.GetBoolValue(
+    LOG_IF(FATAL, !conf.GetBoolValue(
         "fs.enable_epool", &lfsOption.enableEpool));
     LOG_IF(FATAL, 0 != fs->Init(lfsOption))
         << "Failed to initialize local filesystem module!";

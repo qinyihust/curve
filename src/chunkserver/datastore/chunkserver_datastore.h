@@ -38,6 +38,7 @@
 #include "src/chunkserver/datastore/chunkserver_chunkfile.h"
 #include "src/chunkserver/datastore/chunkfile_pool.h"
 #include "src/fs/local_filesystem.h"
+#include "src/fs/async_closure.h"
 
 namespace curve {
 namespace chunkserver {
@@ -209,6 +210,7 @@ class CSDataStore {
                                 off_t offset,
                                 size_t length,
                                 uint32_t* cost,
+                                ReqClosure *done,
                                 const std::string & cloneSourceLocation = "");
     /**
      * 创建克隆的Chunk，chunk中记录数据源位置信息

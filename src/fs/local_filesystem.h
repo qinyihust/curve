@@ -178,7 +178,8 @@ class LocalFileSystem {
      * @return 返回成功写入的数据长度，失败返回-1
      */
     virtual int Write(int fd, const char* buf, uint64_t offset, int length) = 0;
-
+    virtual int WriteAsync(int fd, const char *buf, uint64_t offset,
+                           int length, void *done) = 0;
     // /**
     //  * 向文件指定区域写入数据，协程方式
     //  * @param fd：文件句柄id，通过Open接口获取
