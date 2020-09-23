@@ -255,6 +255,7 @@ void CopysetNode::on_apply(::braft::Iterator &iter) {
 	    butil::Timer timer;
 	    timer.start();
 
+	    opRequest->timer4.start();
             concurrentapply_->Push(opRequest->ChunkId(), task);
 	 
 	    timer.stop();
@@ -277,7 +278,9 @@ void CopysetNode::on_apply(::braft::Iterator &iter) {
                                   dataStore_,
                                   std::move(request),
                                   data);
-            concurrentapply_->Push(chunkId, task);
+            
+            opReq->timer4.start();
+	    concurrentapply_->Push(chunkId, task);
         }
     }
 }

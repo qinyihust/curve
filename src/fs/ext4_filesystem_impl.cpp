@@ -41,6 +41,11 @@
 static bvar::LatencyRecorder g_fs_write_latency(
 		                                   "fs_write");
 
+static bvar::LatencyRecorder g_iotask_pop_latency("iotask_pop");
+static bvar::LatencyRecorder g_iotask_submit_latency("iotask_submit");
+static bvar::LatencyRecorder g_iotask_reap_latency("iotask_reap");
+static bvar::LatencyRecorder g_req_done_latency("req_done");
+
 namespace curve {
 namespace fs {
 
@@ -189,10 +194,16 @@ void Ext4FileSystemImpl::BatchSubmit(std::deque<IoTask *> *batchIo) {
     int size = batchIo->size();
     int i = 0;
     iocb *iocbs[size];
+    ReqClosure *done[size];
 
     for (i = 0; i < size; ++i) {
         iocbs[i] = new iocb;
         IoTask *task = batchIo->front();
+	done[i] = (ReqClosure *)task->done_;
+        done[i]->timer_.stop();
+        g_iotask_pop_latency << done[i]->timer_.u_elapsed();
+	done[i]->timer_.start();
+
         if (task->isRead_)
             io_prep_pread(iocbs[i], task->fd_, task->buf_, task->length_,
                           task->offset_);
@@ -207,6 +218,8 @@ void Ext4FileSystemImpl::BatchSubmit(std::deque<IoTask *> *batchIo) {
         delete task;
     }
 
+    butil::Timer t;
+    t.start();
     int ret = posixWrapper_->iosubmit(ctx_, size, iocbs);
     while (ret == -EAGAIN) {
         LOG(ERROR) << "failed to submit IO with EAGAIN";
@@ -214,28 +227,30 @@ void Ext4FileSystemImpl::BatchSubmit(std::deque<IoTask *> *batchIo) {
         ret = posixWrapper_->iosubmit(ctx_, size, iocbs);
     }
     if (ret < 0)
-        LOG(FATAL) << "failed to submit libaio, errno: " << strerror(errno);
+        LOG(FATAL) << "failed to submit libaio, ret=" << ret << ", errno: " << strerror(errno);
     nrFlyingIo_.fetch_add(size);
     //LOG(INFO) << size << " IO submitted, flying IO number=" << nrFlyingIo_;
+    t.stop();
+    g_iotask_submit_latency << t.u_elapsed();
 }
 
 void Ext4FileSystemImpl::IoSubmitter() {
     LOG(INFO) << "start IO submitter thread";
     while (!stop_) {
         // sleep if I/O depth is overload
-        if (nrFlyingIo_ >= maxEvents_) {
-            LOG(INFO) << "flying IO number=" << nrFlyingIo_ << ", go to sleep";
-            usleep(100);
+        int nrFlying = nrFlyingIo_;
+        if (nrFlying >= maxEvents_) {
+            //LOG(INFO) << "flying IO number=" << nrFlying << ", go to sleep";
+            usleep(10);
             continue;
         }
 
         int nrSubmit = 0;
-        int nrFlying = nrFlyingIo_;
         std::deque<IoTask *> batchIo;
         submitMutex_.lock();
         if (tasks_.empty()) {
             submitMutex_.unlock();
-            usleep(100);
+            usleep(10);
             continue;
         }
 
@@ -293,19 +308,28 @@ void Ext4FileSystemImpl::ReapIoWithEpoll() {
                 }
                 continue;
             }
-               
+           
             for (int i = 0; i < eventNum; i++) {
                 delete events[i].obj;
                 ReqClosure *done =
                     reinterpret_cast<ReqClosure *> (events[i].data);
                 
-                brpc::ClosureGuard doneGuard(done);
+		done->timer_.stop();
+                g_iotask_reap_latency << done->timer_.u_elapsed();
+                done->timer_.start();
+
                 done->res_ = events[i].res2;
                 if (events[i].res2)
                     LOG(ERROR) << "res = " << events[i].res
                               << ", res2 = " << events[i].res2;
                 nrFlyingIo_--;
+
+	       done->Run();
+               done->timer_.stop();
+               g_req_done_latency << done->timer_.u_elapsed();
             }
+
+
             //LOG(INFO) << eventNum << " IOs reaped, flying IO number=" << nrFlyingIo_;
             finishIoCount -= eventNum;
         }
@@ -336,13 +360,20 @@ void Ext4FileSystemImpl::ReapIoWithoutEpoll() {
         startTime = common::TimeUtility::GetTimeofDayUs();
         {
             ReqClosure *done = reinterpret_cast<ReqClosure *> (event.data);
-            brpc::ClosureGuard doneGuard(done);
+            //brpc::ClosureGuard doneGuard(done);
             done->res_ = event.res2;
             if (event.res2)
                 LOG(ERROR) << "res = " << event.res << ", res2 = " << event.res2;
             // LOG(INFO) << "get event ctx = " << event.data << ", ret = " <<
             // ret;
             nrFlyingIo_--;
+            done->timer_.stop();
+            g_iotask_reap_latency << done->timer_.u_elapsed();
+            done->timer_.start();  
+
+	    done->Run();
+            done->timer_.stop();
+            g_req_done_latency << done->timer_.u_elapsed();
         }
         endTime = common::TimeUtility::GetTimeofDayUs();
         //LOG(INFO) << "1 IO reaped, cb run time=" <<  endTime - startTime 

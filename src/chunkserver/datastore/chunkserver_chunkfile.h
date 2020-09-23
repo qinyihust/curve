@@ -293,6 +293,7 @@ class CSChunkFile {
 
     inline int writeData(const char* buf, off_t offset, size_t length,
                          ReqClosure* done) {
+	done->timer_.start();
         int rc = lfs_->WriteAsync(fd_, buf, offset + pageSize_, length, done);
         if (rc < 0) {
             return rc;
