@@ -256,8 +256,8 @@ void CopysetNode::on_apply(::braft::Iterator &iter) {
 	    timer.start();
 
 	    opRequest->timer4.start();
-            concurrentapply_->Push(opRequest->ChunkId(), task);
-	 
+            //concurrentapply_->Push(opRequest->ChunkId(), task);
+	    task();
 	    timer.stop();
 	    g_concurrent_apply_latency << timer.u_elapsed();
         } else {
@@ -280,7 +280,8 @@ void CopysetNode::on_apply(::braft::Iterator &iter) {
                                   data);
             
             opReq->timer4.start();
-	    concurrentapply_->Push(chunkId, task);
+	    //concurrentapply_->Push(chunkId, task);
+	    task();
         }
     }
 }
