@@ -33,6 +33,8 @@
 #include "src/fs/wrap_posix.h"
 
 #define MIN_KERNEL_VERSION KERNEL_VERSION(3, 15, 0)
+static bvar::LatencyRecorder g_fs_write_latency(
+		                                   "fs_write");
 
 namespace curve {
 namespace fs {

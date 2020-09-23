@@ -36,6 +36,21 @@
 #include "src/chunkserver/clone_manager.h"
 #include "src/chunkserver/clone_task.h"
 
+static bvar::LatencyRecorder g_oprequest_leader_writechunk_latency(
+		                                    "oprequest_leader_write_chunk");
+static bvar::LatencyRecorder g_oprequest_follower_writechunk_latency(
+		                                    "oprequest_follower_write_chunk");
+
+static bvar::LatencyRecorder g_oprequest_writechunk_latency(
+		                                    "oprequest_write_chunk");
+
+static bvar::LatencyRecorder g_concurrent_apply_queue_latency(
+		                                    "concurrent_apply_queue");
+
+static bvar::LatencyRecorder g_oprequest_propose_latency(
+		                                    "oprequest_propose");
+
+
 namespace curve {
 namespace chunkserver {
 
@@ -78,6 +93,8 @@ void ChunkOpRequest::Process() {
 
 int ChunkOpRequest::Propose(const ChunkRequest *request,
                             const butil::IOBuf *data) {
+    timer.start();
+    timer3.start();
     // 检查任期和自己是不是Leader
     if (!node_->IsLeaderTerm()) {
         RedirectChunkRequest();
@@ -102,7 +119,8 @@ int ChunkOpRequest::Propose(const ChunkRequest *request,
     task.expected_term = node_->LeaderTerm();
 
     node_->Propose(task);
-
+    timer3.stop();
+    g_oprequest_propose_latency << timer3.u_elapsed();
     return 0;
 }
 
@@ -462,7 +480,14 @@ void WriteChunkCb1(int ret, ::google::protobuf::Closure *done,
 
 void WriteChunkRequest::OnApply(uint64_t index,
                                 ::google::protobuf::Closure *done) {
-    uint32_t cost;
+     timer2.stop();
+     g_concurrent_apply_queue_latency << timer2.u_elapsed();
+   
+     butil::Timer timer;
+     timer.start();
+	
+	
+	uint32_t cost;
 
     std::string  cloneSourceLocation;
     if (existCloneInfo(request_)) {
@@ -488,6 +513,10 @@ void WriteChunkRequest::OnApply(uint64_t index,
     //          << "response_" << response_ <<", this=" << this 
     //          << ", this->request_=" << this->request_
     //          << ", this->response_=" << this->response_;
+    
+     timer.stop();
+     g_oprequest_leader_writechunk_latency << timer.u_elapsed();
+     g_oprequest_writechunk_latency << timer.u_elapsed();
 }
 
 void WriteChunkFromLogCb1(int ret, const ChunkRequest *request,
@@ -509,7 +538,10 @@ void WriteChunkFromLogCb1(int ret, const ChunkRequest *request,
 void WriteChunkRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
                                        const ChunkRequest &request,
                                        const butil::IOBuf &data) {
-    // NOTE: 处理过程中优先使用参数传入的datastore/request
+	butil::Timer timer;
+	 timer.start();
+
+	// NOTE: 处理过程中优先使用参数传入的datastore/request
     uint32_t cost;
     std::string  cloneSourceLocation;
     if (existCloneInfo(&request)) {
@@ -532,6 +564,10 @@ void WriteChunkRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
     auto ret = datastore->WriteChunk(request.chunkid(), request.sn(),
                                      writeBuf, request.offset(), request.size(),
                                      &cost, callback, cloneSourceLocation);
+
+       timer.stop();
+           g_oprequest_follower_writechunk_latency << timer.u_elapsed();
+          g_oprequest_writechunk_latency << timer.u_elapsed();
 }
 
 void ReadSnapshotRequest::OnApply(uint64_t index,
