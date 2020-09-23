@@ -70,6 +70,8 @@ class ChunkOpRequest : public std::enable_shared_from_this<ChunkOpRequest> {
     butil::Timer timer2;
     butil::Timer timer3;
 
+    butil::Timer timer4;
+
     virtual ~ChunkOpRequest() = default;
 
     /**
