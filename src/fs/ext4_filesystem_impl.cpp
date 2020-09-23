@@ -29,6 +29,8 @@
 #include <sys/epoll.h>
 #include <utility>
 
+#include <brpc/server.h>
+
 #include "bthread/bthread.h"
 #include "src/common/string_util.h"
 #include "src/common/timeutility.h"
@@ -36,6 +38,8 @@
 #include "src/fs/wrap_posix.h"
 
 #define MIN_KERNEL_VERSION KERNEL_VERSION(3, 15, 0)
+static bvar::LatencyRecorder g_fs_write_latency(
+		                                   "fs_write");
 
 namespace curve {
 namespace fs {
@@ -678,7 +682,9 @@ int Ext4FileSystemImpl::WriteAsync(int fd, const char *buf, uint64_t offset,
 
 int Ext4FileSystemImpl::Write(int fd, const char *buf, uint64_t offset,
                               int length) {
-    uint64_t startTime = common::TimeUtility::GetTimeofDayUs();
+    butil::Timer timer;
+    timer.start();
+    	uint64_t startTime = common::TimeUtility::GetTimeofDayUs();
     int ret;
     if (enableAio_ && enableCoroutine_) {
         ret = WriteCoroutine_(fd, buf, offset, length);
@@ -689,7 +695,8 @@ int Ext4FileSystemImpl::Write(int fd, const char *buf, uint64_t offset,
     metric_.totalWriteLatancy << latancy;
     // LOG(INFO) << "latancy = " << latancy << ", max: " <<
     // metric_.totalWriteLatancy.max_latency();
-
+    timer.stop();
+    g_fs_write_latency << timer.u_elapsed();
     return ret;
 }
 
