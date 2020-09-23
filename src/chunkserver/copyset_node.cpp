@@ -242,8 +242,7 @@ void CopysetNode::on_apply(::braft::Iterator &iter) {
                                   opRequest,
                                   iter.index(),
                                   doneGuard.release());
-            concurrentapply_->Push(
-                opRequest->ChunkId(), opRequest->OpType(), task);
+            task();
         } else {
             // 获取log entry
             butil::IOBuf log = iter.data();
@@ -262,7 +261,7 @@ void CopysetNode::on_apply(::braft::Iterator &iter) {
                                   dataStore_,
                                   std::move(request),
                                   data);
-            concurrentapply_->Push(chunkId, request.optype(), task);
+            task();
         }
     }
 }
