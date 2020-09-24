@@ -46,6 +46,21 @@ static bvar::LatencyRecorder g_iotask_submit_latency("iotask_submit");
 static bvar::LatencyRecorder g_iotask_reap_latency("iotask_reap");
 static bvar::LatencyRecorder g_req_done_latency("req_done");
 
+static bvar::LatencyRecorder g_iotask_lat0(
+                             "iotask_lat0");
+static bvar::LatencyRecorder g_iotask_lat1(
+                             "iotask_lat1");
+static bvar::LatencyRecorder g_iotask_lat2(
+                             "iotask_lat2");
+static bvar::LatencyRecorder g_iotask_lat3(
+                             "iotask_lat3");
+static bvar::LatencyRecorder g_iotask_lat4(
+                             "iotask_lat4");
+static bvar::LatencyRecorder g_iotask_lat5(
+                             "iotask_lat5");
+static bvar::LatencyRecorder g_iotask_lat6(
+                             "iotask_lat6");
+
 namespace curve {
 namespace fs {
 
@@ -195,8 +210,10 @@ void Ext4FileSystemImpl::BatchSubmit(std::deque<IoTask *> *batchIo) {
     int i = 0;
     iocb *iocbs[size];
     ReqClosure *done[size];
+	butil::Timer timer;
 
     for (i = 0; i < size; ++i) {
+	timer.start();
         iocbs[i] = new iocb;
         IoTask *task = batchIo->front();
 	done[i] = (ReqClosure *)task->done_;
@@ -216,8 +233,10 @@ void Ext4FileSystemImpl::BatchSubmit(std::deque<IoTask *> *batchIo) {
         iocbs[i]->data = (void *)task->done_;
         batchIo->pop_front();
         delete task;
+	timer.stop();
+	g_iotask_lat5 << timer.u_elapsed();
     }
-
+ 
     butil::Timer t;
     t.start();
     int ret = posixWrapper_->iosubmit(ctx_, size, iocbs);
@@ -229,7 +248,7 @@ void Ext4FileSystemImpl::BatchSubmit(std::deque<IoTask *> *batchIo) {
     if (ret < 0)
         LOG(FATAL) << "failed to submit libaio, ret=" << ret << ", errno: " << strerror(errno);
     nrFlyingIo_.fetch_add(size);
-    //LOG(INFO) << size << " IO submitted, flying IO number=" << nrFlyingIo_;
+    LOG(INFO) << size << " IO submitted, flying IO number=" << nrFlyingIo_;
     t.stop();
     g_iotask_submit_latency << t.u_elapsed();
 }
@@ -240,32 +259,53 @@ void Ext4FileSystemImpl::IoSubmitter() {
         // sleep if I/O depth is overload
         int nrFlying = nrFlyingIo_;
         if (nrFlying >= maxEvents_) {
-            //LOG(INFO) << "flying IO number=" << nrFlying << ", go to sleep";
+            LOG(INFO) << "flying IO number=" << nrFlying << ", go to sleep";
             usleep(10);
             continue;
         }
 
-        int nrSubmit = 0;
+	butil::Timer timer;
+	timer.start();
+
+	int nrSubmit = 0;
         std::deque<IoTask *> batchIo;
         submitMutex_.lock();
         if (tasks_.empty()) {
             submitMutex_.unlock();
+	    timer.stop();
+            g_iotask_lat0 << timer.u_elapsed();
+	    timer.start();
             usleep(10);
+	    timer.stop();
+	    g_iotask_lat6 << timer.u_elapsed();
             continue;
         }
+	timer.stop();
+	g_iotask_lat1 << timer.u_elapsed();
+        timer.start();
 
         if (tasks_.size() + nrFlying > maxEvents_) {
             nrSubmit = maxEvents_ - nrFlying;
+	    LOG(INFO) << "try fetch " << nrSubmit << " IOs from submit queue";
             while (nrSubmit > 0) {
                 batchIo.push_back(tasks_.front());
                 tasks_.pop_front();
                 --nrSubmit;
             }
+            timer.stop();
+            g_iotask_lat2 << timer.u_elapsed();
         } else {
+	    LOG(INFO) << "swap submit queue";
             batchIo.swap(tasks_);
+	    timer.stop();
+	    g_iotask_lat3 << timer.u_elapsed();
         }
+	timer.start();
+	LOG(INFO) << "going to submit " << batchIo.size() << " IOs, remain "
+		  << tasks_.size() << " IOs";
         submitMutex_.unlock();
-
+        timer.stop();
+	g_iotask_lat4 << timer.u_elapsed();
         BatchSubmit(&batchIo);
     }
 }
