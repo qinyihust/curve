@@ -42,19 +42,20 @@ static bvar::LatencyRecorder g_iotask_reap_latency("iotask_reap");
 static bvar::LatencyRecorder g_req_done_latency("req_done");
 
 static bvar::LatencyRecorder g_iotask_lat0(
-                             "iotask_lat0");
+                             "iotask_latency0");
 static bvar::LatencyRecorder g_iotask_lat1(
-                             "iotask_lat1");
+                             "iotask_latency1");
 static bvar::LatencyRecorder g_iotask_lat2(
-                             "iotask_lat2");
+                             "iotask_latency2");
 static bvar::LatencyRecorder g_iotask_lat3(
-                             "iotask_lat3");
+                             "iotask_latency3");
 static bvar::LatencyRecorder g_iotask_lat4(
-                             "iotask_lat4");
+                             "iotask_latency4");
 static bvar::LatencyRecorder g_iotask_lat5(
-                             "iotask_lat5");
+                             "iotask_latency5");
 static bvar::LatencyRecorder g_iotask_lat6(
-                             "iotask_lat6");
+                             "iotask_latency6");
+static bvar::Adder<uint32_t> g_iotask_queue_len("iotask_qlen");
 
 namespace curve {
 namespace fs {
@@ -240,6 +241,8 @@ void Ext4FileSystemImpl::BatchSubmit(std::deque<IoTask *> *batchIo) {
 void Ext4FileSystemImpl::IoSubmitter() {
     LOG(INFO) << "start IO submitter thread";
     while (!stop_) {
+	butil::Timer timer;
+
         // sleep if I/O depth is overload
         int nrFlying = nrFlyingIo_;
         if (nrFlying >= maxEvents_) {
@@ -248,7 +251,6 @@ void Ext4FileSystemImpl::IoSubmitter() {
             continue;
         }
 
-	butil::Timer timer;
 	timer.start();
 
 	int nrSubmit = 0;
@@ -258,10 +260,7 @@ void Ext4FileSystemImpl::IoSubmitter() {
             submitMutex_.unlock();
 	    timer.stop();
             g_iotask_lat0 << timer.u_elapsed();
-	    timer.start();
             usleep(10);
-	    timer.stop();
-	    g_iotask_lat6 << timer.u_elapsed();
             continue;
         }
 	timer.stop();
@@ -270,6 +269,7 @@ void Ext4FileSystemImpl::IoSubmitter() {
 
         if (tasks_.size() + nrFlying > maxEvents_) {
             nrSubmit = maxEvents_ - nrFlying;
+	    g_iotask_queue_len << -nrSubmit;
             while (nrSubmit > 0) {
                 batchIo.push_back(tasks_.front());
                 tasks_.pop_front();
@@ -278,6 +278,7 @@ void Ext4FileSystemImpl::IoSubmitter() {
             timer.stop();
             g_iotask_lat2 << timer.u_elapsed();
         } else {
+	    g_iotask_queue_len << -(tasks_.size());
             batchIo.swap(tasks_);
 	    timer.stop();
 	    g_iotask_lat3 << timer.u_elapsed();
@@ -286,7 +287,10 @@ void Ext4FileSystemImpl::IoSubmitter() {
         submitMutex_.unlock();
         timer.stop();
 	g_iotask_lat4 << timer.u_elapsed();
+	timer.start();
         BatchSubmit(&batchIo);
+	timer.stop();
+	g_iotask_lat6 << timer.u_elapsed();
     }
 }
 
@@ -602,6 +606,7 @@ int Ext4FileSystemImpl::WriteAsync(int fd, const char *buf, uint64_t offset,
     submitMutex_.lock();
     tasks_.push_back(task);
     submitMutex_.unlock();
+    g_iotask_queue_len << 1;
 }
 
 int Ext4FileSystemImpl::Write(int fd, const char *buf, uint64_t offset,
