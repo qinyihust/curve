@@ -34,8 +34,8 @@
 namespace curve {
 namespace chunkserver {
 
-CSDataStore::CSDataStore(std::shared_ptr<LocalFileSystem> lfs,
-                         std::shared_ptr<ChunkfilePool> chunkfilePool,
+CSDataStore::CSDataStore(LocalFileSystem* lfs,
+                         ChunkfilePool* chunkfilePool,
                          const DataStoreOptions& options)
     : chunkSize_(options.chunkSize),
       pageSize_(options.pageSize),
@@ -70,7 +70,7 @@ bool CSDataStore::Initialize() {
 
     // 如果之前加载过，这里要重新加载
     metaCache_.Clear();
-    metric_ = std::make_shared<DataStoreMetric>();
+    metric_ = new DataStoreMetric();
     for (size_t i = 0; i < files.size(); ++i) {
         FileNameOperator::FileInfo info =
             FileNameOperator::ParseFileName(files[i]);

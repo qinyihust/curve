@@ -62,8 +62,8 @@ class CurveFilesystemAdaptor : public braft::PosixFileSystemAdaptor {
      * @param: chunkfilePool用于获取和回收chunk文件
      * @param: lfs用于进行一些文件操作，比如打开或者删除目录
      */
-    CurveFilesystemAdaptor(std::shared_ptr<ChunkfilePool> chunkfilePool,
-                                  std::shared_ptr<LocalFileSystem> lfs);
+    CurveFilesystemAdaptor(ChunkfilePool* chunkfilePool,
+                                  LocalFileSystem* lfs);
     CurveFilesystemAdaptor();
     virtual ~CurveFilesystemAdaptor();
 
@@ -143,10 +143,10 @@ class CurveFilesystemAdaptor : public braft::PosixFileSystemAdaptor {
     // 这里创建一个临时的metapage，其内容无关紧要，因为快照会覆盖这部分内容
     char*  tempMetaPageContent;
     // 我们自己的文件系统，这里文件系统会做一些打开及删除目录操作
-    std::shared_ptr<LocalFileSystem> lfs_;
+    LocalFileSystem* lfs_;
     // 操作chunkfilepool的指针，这个chunkfilePool_与copysetnode的
     // chunkfilePool_应该是全局唯一的，保证操作chunkfilepool的原子性
-    std::shared_ptr<ChunkfilePool> chunkfilePool_;
+    ChunkfilePool* chunkfilePool_;
     // 过滤名单，在当前vector中的文件名，都不从chunkfilepool中取文件
     // 回收的时候也直接删除这些文件，不进入chunkfilepool
     std::vector<std::string> filterList_;

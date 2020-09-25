@@ -224,7 +224,7 @@ void DeleteChunkRequest::OnApply(uint64_t index,
     response_->set_appliedindex(maxIndex);
 }
 
-void DeleteChunkRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+void DeleteChunkRequest::OnApplyFromLog(CSDataStore* datastore,
                                         const ChunkRequest &request,
                                         const butil::IOBuf &data) {
     // NOTE: 处理过程中优先使用参数传入的datastore/request
@@ -387,7 +387,7 @@ void ReadChunkRequest::OnApply(uint64_t index,
     response_->set_appliedindex(maxIndex);
 }
 
-void ReadChunkRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+void ReadChunkRequest::OnApplyFromLog(CSDataStore* datastore,
                                       const ChunkRequest &request,
                                       const butil::IOBuf &data) {
     // NOTE: 处理过程中优先使用参数传入的datastore/request
@@ -542,7 +542,7 @@ void WriteChunkFromLogCb1(int ret, const ChunkRequest *request,
     }
 }
 
-void WriteChunkRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+void WriteChunkRequest::OnApplyFromLog(CSDataStore* datastore,
                                        const ChunkRequest &request,
                                        const butil::IOBuf &data) {
 	butil::Timer timer;
@@ -655,7 +655,7 @@ void ReadSnapshotRequest::OnApply(uint64_t index,
     response_->set_appliedindex(maxIndex);
 }
 
-void ReadSnapshotRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+void ReadSnapshotRequest::OnApplyFromLog(CSDataStore* datastore,
                                          const ChunkRequest &request,
                                          const butil::IOBuf &data) {
     // NOTE: 处理过程中优先使用参数传入的datastore/request
@@ -701,7 +701,7 @@ void DeleteSnapshotRequest::OnApply(uint64_t index,
     response_->set_appliedindex(maxIndex);
 }
 
-void DeleteSnapshotRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,  //NOLINT
+void DeleteSnapshotRequest::OnApplyFromLog(CSDataStore* datastore,  //NOLINT
                                            const ChunkRequest &request,
                                            const butil::IOBuf &data) {
     // NOTE: 处理过程中优先使用参数传入的datastore/request
@@ -788,7 +788,7 @@ void CreateCloneChunkRequest::OnApply(uint64_t index,
     response_->set_appliedindex(maxIndex);
 }
 
-void CreateCloneChunkRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,  //NOLINT
+void CreateCloneChunkRequest::OnApplyFromLog(CSDataStore* datastore,  //NOLINT
                                              const ChunkRequest &request,
                                              const butil::IOBuf &data) {
     // NOTE: 处理过程中优先使用参数传入的datastore/request
@@ -888,7 +888,7 @@ void PasteChunkInternalRequest::OnApply(uint64_t index,
     response_->set_appliedindex(maxIndex);
 }
 
-void PasteChunkInternalRequest::OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,  //NOLINT
+void PasteChunkInternalRequest::OnApplyFromLog(CSDataStore* datastore,  //NOLINT
                                                const ChunkRequest &request,
                                                const butil::IOBuf &data) {
     char *pasteBuf = nullptr;

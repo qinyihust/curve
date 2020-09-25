@@ -56,7 +56,7 @@ std::ostream& operator<<(std::ostream& os, const EntryHeader& h);
 
 class SegmentParser {
  public:
-    explicit SegmentParser(std::shared_ptr<LocalFileSystem> localFS) :
+    explicit SegmentParser(LocalFileSystem* localFS) :
                 localFS_(localFS) {}
 
     /**
@@ -93,7 +93,7 @@ class SegmentParser {
     // 文件长度
     int64_t fileLen_;
 
-    std::shared_ptr<LocalFileSystem> localFS_;
+    LocalFileSystem* localFS_;
 };
 
 class RaftLogTool : public CurveTool {

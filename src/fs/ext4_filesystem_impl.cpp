@@ -49,11 +49,11 @@ static bvar::LatencyRecorder g_req_done_latency("req_done");
 namespace curve {
 namespace fs {
 
-std::shared_ptr<Ext4FileSystemImpl> Ext4FileSystemImpl::self_ = nullptr;
+Ext4FileSystemImpl * Ext4FileSystemImpl::self_ = nullptr;
 std::mutex Ext4FileSystemImpl::mutex_;
 
 Ext4FileSystemImpl::Ext4FileSystemImpl(
-    std::shared_ptr<PosixWrapper> posixWrapper)
+    PosixWrapper * posixWrapper)
     : posixWrapper_(posixWrapper)
     , enableRenameat2_(false)
     , enableCoroutine_(false)
@@ -65,19 +65,18 @@ Ext4FileSystemImpl::Ext4FileSystemImpl(
 Ext4FileSystemImpl::~Ext4FileSystemImpl() {
 }
 
-std::shared_ptr<Ext4FileSystemImpl> Ext4FileSystemImpl::getInstance() {
+Ext4FileSystemImpl * Ext4FileSystemImpl::getInstance() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (self_ == nullptr) {
-        std::shared_ptr<PosixWrapper> wrapper =
-            std::make_shared<PosixWrapper>();
-        self_ = std::shared_ptr<Ext4FileSystemImpl>(
-                new(std::nothrow) Ext4FileSystemImpl(wrapper));
+        PosixWrapper * wrapper =
+            new PosixWrapper();
+        self_ = new(std::nothrow) Ext4FileSystemImpl(wrapper);
         CHECK(self_ != nullptr) << "Failed to new ext4 local fs.";
     }
     return self_;
 }
 
-void Ext4FileSystemImpl::SetPosixWrapper(std::shared_ptr<PosixWrapper> wrapper) {  //NOLINT
+void Ext4FileSystemImpl::SetPosixWrapper(PosixWrapper * wrapper) {  //NOLINT
     CHECK(wrapper != nullptr) << "PosixWrapper is null";
     posixWrapper_ = wrapper;
 }

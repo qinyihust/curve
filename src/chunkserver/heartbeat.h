@@ -72,7 +72,7 @@ struct HeartbeatOptions {
     uint32_t                timeout;
     CopysetNodeManager*     copysetNodeManager;
 
-    std::shared_ptr<LocalFileSystem> fs;
+    LocalFileSystem* fs;
 };
 
 /**

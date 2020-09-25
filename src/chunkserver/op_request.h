@@ -97,7 +97,7 @@ class ChunkOpRequest : public std::enable_shared_from_this<ChunkOpRequest> {
      * @param request:反序列化后得到的request 细信息
      * @param data:反序列化后得到的request要处理的数据
      */
-    virtual void OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+    virtual void OnApplyFromLog(CSDataStore* datastore,
                                 const ChunkRequest &request,
                                 const butil::IOBuf &data) = 0;
 
@@ -170,7 +170,7 @@ class ChunkOpRequest : public std::enable_shared_from_this<ChunkOpRequest> {
 
  public:
     // chunk持久化接口
-    std::shared_ptr<CSDataStore> datastore_;
+    CSDataStore* datastore_;
     // 复制组
     std::shared_ptr<CopysetNode> node_;
     // rpc controller
@@ -200,7 +200,7 @@ class DeleteChunkRequest : public ChunkOpRequest {
     virtual ~DeleteChunkRequest() = default;
 
     void OnApply(uint64_t index, ::google::protobuf::Closure *done) override;
-    void OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+    void OnApplyFromLog(CSDataStore* datastore,
                         const ChunkRequest &request,
                         const butil::IOBuf &data) override;
 };
@@ -223,7 +223,7 @@ class ReadChunkRequest : public ChunkOpRequest {
 
     void Process() override;
     void OnApply(uint64_t index, ::google::protobuf::Closure *done) override;
-    void OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+    void OnApplyFromLog(CSDataStore* datastore,
                         const ChunkRequest &request,
                         const butil::IOBuf &data) override;
 
@@ -262,7 +262,7 @@ class WriteChunkRequest : public ChunkOpRequest {
     virtual ~WriteChunkRequest() = default;
 
     void OnApply(uint64_t index, ::google::protobuf::Closure *done);
-    void OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+    void OnApplyFromLog(CSDataStore* datastore,
                         const ChunkRequest &request,
                         const butil::IOBuf &data) override;
 };
@@ -284,7 +284,7 @@ class ReadSnapshotRequest : public ChunkOpRequest {
     virtual ~ReadSnapshotRequest() = default;
 
     void OnApply(uint64_t index, ::google::protobuf::Closure *done) override;
-    void OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+    void OnApplyFromLog(CSDataStore* datastore,
                         const ChunkRequest &request,
                         const butil::IOBuf &data) override;
 };
@@ -306,7 +306,7 @@ class DeleteSnapshotRequest : public ChunkOpRequest {
     virtual ~DeleteSnapshotRequest() = default;
 
     void OnApply(uint64_t index, ::google::protobuf::Closure *done) override;
-    void OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+    void OnApplyFromLog(CSDataStore* datastore,
                         const ChunkRequest &request,
                         const butil::IOBuf &data) override;
 };
@@ -328,7 +328,7 @@ class CreateCloneChunkRequest : public ChunkOpRequest {
     virtual ~CreateCloneChunkRequest() = default;
 
     void OnApply(uint64_t index, ::google::protobuf::Closure *done) override;
-    void OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+    void OnApplyFromLog(CSDataStore* datastore,
                         const ChunkRequest &request,
                         const butil::IOBuf &data) override;
 };
@@ -355,7 +355,7 @@ class PasteChunkInternalRequest : public ChunkOpRequest {
 
     void Process() override;
     void OnApply(uint64_t index, ::google::protobuf::Closure *done) override;
-    void OnApplyFromLog(std::shared_ptr<CSDataStore> datastore,
+    void OnApplyFromLog(CSDataStore* datastore,
                         const ChunkRequest &request,
                         const butil::IOBuf &data) override;
 

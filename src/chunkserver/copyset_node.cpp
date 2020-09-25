@@ -117,7 +117,7 @@ int CopysetNode::Init(const CopysetNodeOptions &options) {
     dsOptions.chunkSize = options.maxChunkSize;
     dsOptions.pageSize = options.pageSize;
     dsOptions.locationLimit = options.locationLimit;
-    dataStore_ = std::make_shared<CSDataStore>(options.localFileSystem,
+    dataStore_ = new CSDataStore(options.localFileSystem,
                                                options.chunkfilePool,
                                                dsOptions);
     CHECK(nullptr != dataStore_);
@@ -190,7 +190,7 @@ int CopysetNode::Init(const CopysetNodeOptions &options) {
         logicPoolId_, copysetId_);
     if (metric_ != nullptr) {
         // TODO(yyk) 后续考虑添加datastore层面的io metric
-        metric_->MonitorDataStore(dataStore_.get());
+        metric_->MonitorDataStore(dataStore_);
     }
 
     return 0;
@@ -557,11 +557,11 @@ void CopysetNode::ListPeers(std::vector<Peer>* peers) {
     }
 }
 
-void CopysetNode::SetCSDateStore(std::shared_ptr<CSDataStore> datastore) {
+void CopysetNode::SetCSDateStore(CSDataStore* datastore) {
     dataStore_ = datastore;
 }
 
-void CopysetNode::SetLocalFileSystem(std::shared_ptr<LocalFileSystem> fs) {
+void CopysetNode::SetLocalFileSystem(LocalFileSystem* fs) {
     fs_ = fs;
 }
 
@@ -740,7 +740,7 @@ uint64_t CopysetNode::GetAppliedIndex() const {
     return appliedIndex_.load(std::memory_order_acquire);
 }
 
-std::shared_ptr<CSDataStore> CopysetNode::GetDataStore() const {
+CSDataStore* CopysetNode::GetDataStore() const {
     return dataStore_;
 }
 

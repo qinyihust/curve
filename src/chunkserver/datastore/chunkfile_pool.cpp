@@ -48,7 +48,7 @@ const char* ChunkfilePoolHelper::kCRC = "crc";
 const uint32_t ChunkfilePoolHelper::kPersistSize = 4096;
 
 int ChunkfilePoolHelper::PersistEnCodeMetaInfo(
-                                    std::shared_ptr<LocalFileSystem> fsptr,
+                                    LocalFileSystem* fsptr,
                                     uint32_t chunkSize,
                                     uint32_t metaPageSize,
                                     const std::string& chunkfilepool_path,
@@ -108,7 +108,7 @@ int ChunkfilePoolHelper::PersistEnCodeMetaInfo(
 }
 
 int ChunkfilePoolHelper::DecodeMetaInfoFromMetaFile(
-                                    std::shared_ptr<LocalFileSystem> fsptr,
+                                    LocalFileSystem* fsptr,
                                     const std::string& metaFilePath,
                                     uint32_t metaFileSize,
                                     uint32_t* chunksize,
@@ -205,7 +205,7 @@ int ChunkfilePoolHelper::DecodeMetaInfoFromMetaFile(
     return 0;
 }
 
-ChunkfilePool::ChunkfilePool(std::shared_ptr<LocalFileSystem> fsptr):
+ChunkfilePool::ChunkfilePool(LocalFileSystem* fsptr):
                              currentmaxfilenum_(0) {
     CHECK(fsptr != nullptr) << "fs ptr allocate failed!";
     fsptr_ = fsptr;

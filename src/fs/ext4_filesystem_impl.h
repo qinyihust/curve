@@ -119,8 +119,8 @@ class IoTask {
 class Ext4FileSystemImpl : public LocalFileSystem {
  public:
     virtual ~Ext4FileSystemImpl();
-    static std::shared_ptr<Ext4FileSystemImpl> getInstance();
-    void SetPosixWrapper(std::shared_ptr<PosixWrapper> wrapper);
+    static Ext4FileSystemImpl* getInstance();
+    void SetPosixWrapper(PosixWrapper* wrapper);
 
     int Init(const LocalFileSystemOption& option) override;
     int Uninit() override;
@@ -141,7 +141,7 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     int WriteAsync(int fd, const char *buf, uint64_t offset,
                    int length, void *done);
  private:
-    explicit Ext4FileSystemImpl(std::shared_ptr<PosixWrapper>);
+    explicit Ext4FileSystemImpl(PosixWrapper *);
     int DoRename(const string& oldPath, const string& newPath,
                  unsigned int flags) override;
     bool CheckKernelVersion();
@@ -156,9 +156,9 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     int WritePwrite_(int fd, const char* buf, uint64_t offset, int length);
 
  private:
-    static std::shared_ptr<Ext4FileSystemImpl> self_;
+    static Ext4FileSystemImpl* self_;
     static std::mutex mutex_;
-    std::shared_ptr<PosixWrapper> posixWrapper_;
+    PosixWrapper* posixWrapper_;
     bool enableRenameat2_;
     bool enableCoroutine_;
     bool enableAio_;

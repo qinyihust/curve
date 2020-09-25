@@ -103,7 +103,7 @@ struct ChunkOptions {
     // page的大小，bitmap中每个bit表示1个page，metapage大小也是1个page
     PageSizeType    pageSize;
     // datastore内部统计指标
-    std::shared_ptr<DataStoreMetric> metric;
+    DataStoreMetric *metric;
 
     ChunkOptions() : id(0)
                    , sn(0)
@@ -117,8 +117,8 @@ struct ChunkOptions {
 
 class CSChunkFile {
  public:
-    CSChunkFile(std::shared_ptr<LocalFileSystem> lfs,
-                std::shared_ptr<ChunkfilePool> ChunkfilePool,
+    CSChunkFile(LocalFileSystem* lfs,
+                ChunkfilePool* ChunkfilePool,
                 const ChunkOptions& options);
     virtual ~CSChunkFile();
 
@@ -346,11 +346,11 @@ class CSChunkFile {
     // 快照文件指针
     CSSnapshot* snapshot_;
     // 依赖chunkfilepool创建删除文件
-    std::shared_ptr<ChunkfilePool> chunkfilePool_;
+    ChunkfilePool* chunkfilePool_;
     // 依赖本地文件系统操作文件
-    std::shared_ptr<LocalFileSystem> lfs_;
+    LocalFileSystem* lfs_;
     // datastore内部统计指标
-    std::shared_ptr<DataStoreMetric> metric_;
+    DataStoreMetric *metric_;
 };
 }  // namespace chunkserver
 }  // namespace curve

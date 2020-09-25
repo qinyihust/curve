@@ -29,10 +29,10 @@
 namespace curve {
 namespace fs {
 
-std::shared_ptr<LocalFileSystem> LocalFsFactory::CreateFs(
+LocalFileSystem* LocalFsFactory::CreateFs(
     FileSystemType type,
     const std::string& deviceID) {
-    std::shared_ptr<LocalFileSystem> localFs;
+    LocalFileSystem* localFs;
     if (type == FileSystemType::EXT4) {
         localFs = Ext4FileSystemImpl::getInstance();
     } else {

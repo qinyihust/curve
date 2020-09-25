@@ -121,7 +121,7 @@ class ChunkfilePoolHelper {
      * @param[in]: persistPathmeta信息要持久化的路径
      * @return: 成功0， 否则-1
      */
-    static int PersistEnCodeMetaInfo(std::shared_ptr<LocalFileSystem> fsptr,
+    static int PersistEnCodeMetaInfo(LocalFileSystem* fsptr,
                                uint32_t chunkSize,
                                uint32_t metaPageSize,
                                const std::string& chunkfilepool_path,
@@ -138,7 +138,7 @@ class ChunkfilePoolHelper {
      * @return: 成功0， 否则-1
      */
     static int DecodeMetaInfoFromMetaFile(
-                                  std::shared_ptr<LocalFileSystem> fsptr,
+                                  LocalFileSystem* fsptr,
                                   const std::string& metaFilePath,
                                   uint32_t metaFileSize,
                                   uint32_t* chunkSize,
@@ -149,7 +149,7 @@ class ChunkfilePoolHelper {
 class CURVE_CACHELINE_ALIGNMENT ChunkfilePool {
  public:
     // fsptr 本地文件系统.
-    explicit ChunkfilePool(std::shared_ptr<LocalFileSystem> fsptr);
+    explicit ChunkfilePool(LocalFileSystem* fsptr);
     virtual ~ChunkfilePool() = default;
 
     /**
@@ -190,7 +190,7 @@ class CURVE_CACHELINE_ALIGNMENT ChunkfilePool {
     /**
      * 测试使用
      */
-    virtual void SetLocalFileSystem(std::shared_ptr<LocalFileSystem> fs) {
+    virtual void SetLocalFileSystem(LocalFileSystem* fs) {
         fsptr_ = fs;
     }
 
@@ -221,7 +221,7 @@ class CURVE_CACHELINE_ALIGNMENT ChunkfilePool {
     std::string currentdir_;
 
     // chunkserver端封装的底层文件系统接口，提供操作文件的基本接口
-    std::shared_ptr<LocalFileSystem> fsptr_;
+    LocalFileSystem* fsptr_;
 
     // 内存中持有的chunkfile pool中的文件名的数字格式
     std::vector<uint64_t> tmpChunkvec_;

@@ -28,8 +28,8 @@
 namespace curve {
 namespace chunkserver {
 CurveFilesystemAdaptor::CurveFilesystemAdaptor(
-                                std::shared_ptr<ChunkfilePool> chunkfilePool,
-                                std::shared_ptr<LocalFileSystem> lfs) {
+                                ChunkfilePool* chunkfilePool,
+                                LocalFileSystem* lfs) {
     lfs_ = lfs;
     chunkfilePool_ = chunkfilePool;
     uint64_t metapageSize = chunkfilePool_->GetChunkFilePoolOpt().metaPageSize;

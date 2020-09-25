@@ -55,7 +55,7 @@ class SnapshotAttachment :
 // SnapshotAttachment接口的实现，用于raft加载快照时，获取chunk快照文件列表
 class CurveSnapshotAttachment : public SnapshotAttachment {
  public:
-    explicit CurveSnapshotAttachment(std::shared_ptr<LocalFileSystem> fs);
+    explicit CurveSnapshotAttachment(LocalFileSystem* fs);
     virtual ~CurveSnapshotAttachment() = default;
     /**
      * 获取raft snapshot的attachment，这里就是获取chunk的快照文件列表

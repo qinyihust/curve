@@ -49,7 +49,7 @@ std::ostream& operator<<(std::ostream& os, const SnapshotMetaPage& metaPage);
 
 class CurveMetaTool : public CurveTool {
  public:
-    explicit CurveMetaTool(std::shared_ptr<LocalFileSystem> localFs) :
+    explicit CurveMetaTool(LocalFileSystem* localFs) :
                               localFS_(localFs) {}
 
     /**
@@ -86,7 +86,7 @@ class CurveMetaTool : public CurveTool {
      */
     int PrintSnapshotMeta(const std::string& snapFileName);
 
-    std::shared_ptr<LocalFileSystem> localFS_;
+    LocalFileSystem* localFS_;
 };
 
 }  // namespace tool

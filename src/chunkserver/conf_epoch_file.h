@@ -43,7 +43,7 @@ using curve::fs::LocalFsFactory;
  */
 class ConfEpochFile {
  public:
-    explicit ConfEpochFile(std::shared_ptr<LocalFileSystem> fs)
+    explicit ConfEpochFile(LocalFileSystem* fs)
         : fs_(fs) {}
 
     /**
@@ -80,7 +80,7 @@ class ConfEpochFile {
  private:
     static uint32_t ConfEpochCrc(const ConfEpoch &confEpoch);
 
-    std::shared_ptr<LocalFileSystem> fs_;
+    LocalFileSystem* fs_;
 };
 
 }  // namespace chunkserver

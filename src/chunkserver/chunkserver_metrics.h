@@ -50,10 +50,10 @@ class CSDataStore;
 class Trash;
 
 template <typename Tp>
-using PassiveStatusPtr = std::shared_ptr<bvar::PassiveStatus<Tp>>;
+using PassiveStatusPtr = bvar::PassiveStatus<Tp> *;
 
 template <typename Tp>
-using AdderPtr = std::shared_ptr<bvar::Adder<Tp>>;
+using AdderPtr = bvar::Adder<Tp> *;
 
 // 使用LatencyRecorder的实现来统计读写请求的size情况
 // 可以统计分位值、最大值、中位数、平均值等情况
@@ -106,7 +106,7 @@ class IOMetric {
     // 最近1秒的数据量
     bvar::PerSecond<bvar::Adder<uint64_t>>    bps_;
 };
-using IOMetricPtr = std::shared_ptr<IOMetric>;
+using IOMetricPtr = IOMetric *;
 
 enum class CSIOMetricType {
     READ_CHUNK = 0,
@@ -287,7 +287,7 @@ struct ChunkServerMetricOptions {
         : collectMetric(false), ip("127.0.0.1"), port(8888) {}
 };
 
-using CopysetMetricPtr = std::shared_ptr<CSCopysetMetric>;
+using CopysetMetricPtr = CSCopysetMetric *;
 
 class CopysetMetricMap {
  public:

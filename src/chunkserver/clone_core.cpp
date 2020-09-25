@@ -228,7 +228,7 @@ int CloneCore::HandleReadRequest(
     // 获取chunk信息
     CSChunkInfo chunkInfo;
     ChunkID id = readRequest->ChunkId();
-    std::shared_ptr<CSDataStore> dataStore = readRequest->datastore_;
+    CSDataStore* dataStore = readRequest->datastore_;
     CSErrorCode errorCode = dataStore->GetChunkInfo(id, &chunkInfo);
 
     /*
@@ -264,7 +264,7 @@ int CloneCore::ReadChunk(std::shared_ptr<ReadChunkRequest> readRequest) {
     off_t offset = request->offset();
     size_t length = request->size();
     std::unique_ptr<char[]> chunkData(new char[length]);
-    std::shared_ptr<CSDataStore> dataStore = readRequest->datastore_;
+    CSDataStore* dataStore = readRequest->datastore_;
     CSErrorCode errorCode;
     errorCode = dataStore->ReadChunk(request->chunkid(),
                                      request->sn(),
@@ -299,7 +299,7 @@ int CloneCore::SetReadChunkResponse(
     const ChunkRequest* request = readRequest->request_;
     CSChunkInfo chunkInfo;
     ChunkID id = readRequest->ChunkId();
-    std::shared_ptr<CSDataStore> dataStore = readRequest->datastore_;
+    CSDataStore* dataStore = readRequest->datastore_;
     CSErrorCode errorCode = dataStore->GetChunkInfo(id, &chunkInfo);
 
     // 如果chunk不存在，需要判断请求是否带源chunk的信息
@@ -354,7 +354,7 @@ int CloneCore::ReadThenMerge(std::shared_ptr<ReadChunkRequest> readRequest,
                              char* chunkData) {
     const ChunkRequest* request = readRequest->request_;
     ChunkID id = readRequest->ChunkId();
-    std::shared_ptr<CSDataStore> dataStore = readRequest->datastore_;
+    CSDataStore* dataStore = readRequest->datastore_;
 
     off_t offset = request->offset();
     size_t length = request->size();

@@ -78,8 +78,8 @@ struct SnapshotMetaPage {
 
 class CSSnapshot {
  public:
-    CSSnapshot(std::shared_ptr<LocalFileSystem> lfs,
-               std::shared_ptr<ChunkfilePool> ChunkfilePool,
+    CSSnapshot(LocalFileSystem* lfs,
+               ChunkfilePool* ChunkfilePool,
                const ChunkOptions& options);
     virtual ~CSSnapshot();
     /**
@@ -180,9 +180,9 @@ class CSSnapshot {
     // 被写过但还未更新到metapage中的page索引
     std::set<uint32_t> dirtyPages_;
     // 依赖本地文件系统操作文件
-    std::shared_ptr<LocalFileSystem> lfs_;
+    LocalFileSystem* lfs_;
     // 依赖chunkfilepool创建删除文件
-    std::shared_ptr<ChunkfilePool> chunkfilePool_;
+    ChunkfilePool* chunkfilePool_;
     // datastore内部统计指标
     std::shared_ptr<DataStoreMetric> metric_;
 };

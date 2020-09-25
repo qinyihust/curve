@@ -85,7 +85,7 @@ struct DataStoreMetric {
     bvar::Adder<uint32_t> snapshotCount;
     bvar::Adder<uint32_t> cloneChunkCount;
 };
-using DataStoreMetricPtr = std::shared_ptr<DataStoreMetric>;
+using DataStoreMetricPtr = DataStoreMetric *;
 
 using ChunkMap = std::unordered_map<ChunkID, CSChunkFilePtr>;
 // 为chunkid到chunkfile的映射，使用读写锁对map的操作进行保护
@@ -138,8 +138,8 @@ class CSDataStore {
     // for ut mock
     CSDataStore() {}
 
-    CSDataStore(std::shared_ptr<LocalFileSystem> lfs,
-                std::shared_ptr<ChunkfilePool> chunkfilePool,
+    CSDataStore(LocalFileSystem* lfs,
+                ChunkfilePool* chunkfilePool,
                 const DataStoreOptions& options);
     virtual ~CSDataStore();
     /**
@@ -280,9 +280,9 @@ class CSDataStore {
     // 为chunkid->chunkfile的映射
     CSMetaCache metaCache_;
     // chunkfile池，依赖该池子创建回收chunk文件或快照文件
-    std::shared_ptr<ChunkfilePool>          chunkfilePool_;
+    ChunkfilePool*          chunkfilePool_;
     // 本地文件系统
-    std::shared_ptr<LocalFileSystem>        lfs_;
+    LocalFileSystem*        lfs_;
     // datastore的内部统计信息
     DataStoreMetricPtr metric_;
 };

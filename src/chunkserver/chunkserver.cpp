@@ -115,8 +115,7 @@ int ChunkServer::Run(int argc, char** argv) {
         << "Failed to initialize concurrentapply module!";
 
     // 初始化本地文件系统
-    std::shared_ptr<LocalFileSystem> fs(
-        LocalFsFactory::CreateFs(FileSystemType::EXT4, ""));
+    LocalFileSystem* fs = LocalFsFactory::CreateFs(FileSystemType::EXT4, "");
     LocalFileSystemOption lfsOption;
     LOG_IF(FATAL, !conf.GetBoolValue(
         "fs.enable_renameat2", &lfsOption.enableRenameat2));
@@ -134,8 +133,7 @@ int ChunkServer::Run(int argc, char** argv) {
     // 初始化chunk文件池
     ChunkfilePoolOptions chunkFilePoolOptions;
     InitChunkFilePoolOptions(&conf, &chunkFilePoolOptions);
-    std::shared_ptr<ChunkfilePool> chunkfilePool =
-        std::make_shared<ChunkfilePool>(fs);
+    ChunkfilePool* chunkfilePool = new ChunkfilePool(fs);
     LOG_IF(FATAL, false == chunkfilePool->Initialize(chunkFilePoolOptions))
         << "Failed to init chunk file pool";
 
@@ -243,7 +241,7 @@ int ChunkServer::Run(int argc, char** argv) {
 
     // 监控部分模块的metric指标
     metric->MonitorTrash(trash_.get());
-    metric->MonitorChunkFilePool(chunkfilePool.get());
+    metric->MonitorChunkFilePool(chunkfilePool);
     metric->ExposeConfigMetric(&conf);
 
     // ========================添加rpc服务===============================//
@@ -670,7 +668,7 @@ void ChunkServer::LoadConfigFromCmdline(common::Configuration *conf) {
 int ChunkServer::GetChunkServerMetaFromLocal(
     const std::string &storeUri,
     const std::string &metaUri,
-    const std::shared_ptr<LocalFileSystem> &fs,
+    const LocalFileSystem* fs,
     ChunkServerMetadata *metadata) {
     std::string proto = UriParser::GetProtocolFromUri(storeUri);
     if (proto != "local") {
@@ -685,7 +683,7 @@ int ChunkServer::GetChunkServerMetaFromLocal(
         return -1;
     }
     // 元数据文件已经存在
-    if (fs->FileExists(UriParser::GetPathFromUri(metaUri).c_str())) {
+    if (((LocalFileSystem*)fs)->FileExists(UriParser::GetPathFromUri(metaUri).c_str())) {
         // 获取文件内容
         if (ReadChunkServerMeta(fs, metaUri, metadata) != 0) {
             LOG(ERROR) << "Fail to read persisted chunkserver meta data";
@@ -700,12 +698,12 @@ int ChunkServer::GetChunkServerMetaFromLocal(
     return -1;
 }
 
-int ChunkServer::ReadChunkServerMeta(const std::shared_ptr<LocalFileSystem> &fs,
+int ChunkServer::ReadChunkServerMeta(const LocalFileSystem* fs,
     const std::string &metaUri, ChunkServerMetadata *metadata) {
     int fd;
     std::string metaFile = UriParser::GetPathFromUri(metaUri);
 
-    fd = fs->Open(metaFile.c_str(), O_RDONLY);
+    fd = ((LocalFileSystem*)fs)->Open(metaFile.c_str(), O_RDONLY);
     if (fd < 0) {
         LOG(ERROR) << "Failed to open Chunkserver metadata file " << metaFile;
         return -1;
@@ -715,7 +713,7 @@ int ChunkServer::ReadChunkServerMeta(const std::shared_ptr<LocalFileSystem> &fs,
     uint32_t size;
     char json[METAFILE_MAX_SIZE] = {0};
 
-    size = fs->Read(fd, json, 0, METAFILE_MAX_SIZE);
+    size = ((LocalFileSystem*)fs)->Read(fd, json, 0, METAFILE_MAX_SIZE);
     if (size < 0) {
         LOG(ERROR) << "Failed to read Chunkserver metadata file";
         return -1;
@@ -723,7 +721,7 @@ int ChunkServer::ReadChunkServerMeta(const std::shared_ptr<LocalFileSystem> &fs,
         LOG(ERROR) << "Chunkserver metadata file is too large: " << size;
         return -1;
     }
-    if (fs->Close(fd)) {
+    if (((LocalFileSystem*)fs)->Close(fd)) {
         LOG(ERROR) << "Failed to close chunkserver metadata file";
         return -1;
     }

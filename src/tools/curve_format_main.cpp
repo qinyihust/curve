@@ -102,7 +102,7 @@ class CompareInternal {
 };
 
 struct AllocateStruct {
-    std::shared_ptr<LocalFileSystem> fsptr;
+    LocalFileSystem* fsptr;
     std::atomic<uint64_t>* allocateChunknum;
     bool* checkwrong;
     std::mutex* mtx;
@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
 
     // load current chunkfile pool
     std::mutex mtx;
-    std::shared_ptr<LocalFileSystem> fsptr = LocalFsFactory::CreateFs(FileSystemType::EXT4, "");   // NOLINT
+    LocalFileSystem* fsptr = LocalFsFactory::CreateFs(FileSystemType::EXT4, "");   // NOLINT
     std::set<std::string, CompareInternal> tmpChunkSet_;
     std::atomic<uint64_t> allocateChunknum_(0);
     std::vector<std::string> tmpvec;

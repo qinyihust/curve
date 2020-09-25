@@ -248,7 +248,7 @@ class CopysetNode : public braft::StateMachine,
      * 返回data store指针
      * @return
      */
-    virtual std::shared_ptr<CSDataStore> GetDataStore() const;
+    virtual CSDataStore* GetDataStore() const;
 
     /**
      * 返回ConcurrentApplyModule
@@ -349,9 +349,9 @@ class CopysetNode : public braft::StateMachine,
      * 用于测试注入mock依赖
      */
  public:
-    void SetCSDateStore(std::shared_ptr<CSDataStore> datastore);
+    void SetCSDateStore(CSDataStore* datastore);
 
-    void SetLocalFileSystem(std::shared_ptr<LocalFileSystem> fs);
+    void SetLocalFileSystem(LocalFileSystem* fs);
 
     void SetConfEpochFile(std::unique_ptr<ConfEpochFile> epochFile);
 
@@ -410,9 +410,9 @@ class CopysetNode : public braft::StateMachine,
     // copyset绝对路径
     std::string copysetDirPath_;
     // 文件系统适配器
-    std::shared_ptr<LocalFileSystem> fs_;
+    LocalFileSystem* fs_;
     // Chunk持久化操作接口
-    std::shared_ptr<CSDataStore> dataStore_;
+    CSDataStore* dataStore_;
     // 并发模块
     ConcurrentApplyModule *concurrentapply_;
     // 配置版本持久化工具接口

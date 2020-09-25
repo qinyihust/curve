@@ -106,11 +106,11 @@ int CSIOMetric::Init(const std::string& prefix) {
     std::string recoverPrefix = prefix + "_recover";
     std::string pastePrefix = prefix + "_paste";
     std::string downloadPrefix = prefix + "_download";
-    readMetric_ = std::make_shared<IOMetric>();
-    writeMetric_ = std::make_shared<IOMetric>();
-    recoverMetric_ = std::make_shared<IOMetric>();
-    pasteMetric_ = std::make_shared<IOMetric>();
-    downloadMetric_ = std::make_shared<IOMetric>();
+    readMetric_ = new IOMetric();
+    writeMetric_ = new IOMetric();
+    recoverMetric_ = new IOMetric();
+    pasteMetric_ = new IOMetric();
+    downloadMetric_ = new IOMetric();
     if (readMetric_->Init(readPrefix) != 0) {
         LOG(ERROR) << "Init read metric failed."
                    << " prefix = " << readPrefix;
@@ -207,11 +207,11 @@ void CSCopysetMetric::MonitorDataStore(CSDataStore* datastore) {
     std::string chunkCountPrefix = Prefix() + "_chunk_count";
     std::string snapshotCountPrefix = Prefix() + "snapshot_count";
     std::string cloneChunkCountPrefix = Prefix() + "_clonechunk_count";
-    chunkCount_ = std::make_shared<bvar::PassiveStatus<uint32_t>>(
+    chunkCount_ = new bvar::PassiveStatus<uint32_t>(
         chunkCountPrefix, GetDatastoreChunkCountFunc, datastore);
-    snapshotCount_ = std::make_shared<bvar::PassiveStatus<uint32_t>>(
+    snapshotCount_ = new bvar::PassiveStatus<uint32_t>(
         snapshotCountPrefix, GetDatastoreSnapshotCountFunc, datastore);
-    cloneChunkCount_ = std::make_shared<bvar::PassiveStatus<uint32_t>>(
+    cloneChunkCount_ = new bvar::PassiveStatus<uint32_t>(
         cloneChunkCountPrefix, GetDatastoreCloneChunkCountFunc, datastore);
 }
 
@@ -257,18 +257,18 @@ int ChunkServerMetric::Init(const ChunkServerMetricOptions& option) {
 
     // 初始化资源统计
     std::string leaderCountPrefix = Prefix() + "_leader_count";
-    leaderCount_ = std::make_shared<bvar::Adder<uint32_t>>(leaderCountPrefix);
+    leaderCount_ = new bvar::Adder<uint32_t>(leaderCountPrefix);
 
     std::string chunkCountPrefix = Prefix() + "_chunk_count";
-    chunkCount_ = std::make_shared<bvar::PassiveStatus<uint32_t>>(
+    chunkCount_ = new bvar::PassiveStatus<uint32_t>(
         chunkCountPrefix, GetTotalChunkCountFunc, this);
 
     std::string snapshotCountPrefix = Prefix() + "_snapshot_count";
-    snapshotCount_ = std::make_shared<bvar::PassiveStatus<uint32_t>>(
+    snapshotCount_ = new bvar::PassiveStatus<uint32_t>(
         snapshotCountPrefix, GetTotalSnapshotCountFunc, this);
 
     std::string cloneChunkCountPrefix = Prefix() + "_clonechunk_count";
-    cloneChunkCount_ = std::make_shared<bvar::PassiveStatus<uint32_t>>(
+    cloneChunkCount_ = new bvar::PassiveStatus<uint32_t>(
         cloneChunkCountPrefix, GetTotalCloneChunkCountFunc, this);
 
     hasInited_ = true;
@@ -305,7 +305,7 @@ int ChunkServerMetric::CreateCopysetMetric(const LogicPoolID& logicPoolId,
         return -1;
     }
 
-    CopysetMetricPtr copysetMetric = std::make_shared<CSCopysetMetric>();
+    CopysetMetricPtr copysetMetric = new CSCopysetMetric();
     int ret = copysetMetric->Init(logicPoolId, copysetId);
     if (ret < 0) {
         LOG(ERROR) << "Create Copyset ("
@@ -375,7 +375,7 @@ void ChunkServerMetric::MonitorChunkFilePool(ChunkfilePool* chunkfilePool) {
     }
 
     std::string chunkLeftPrefix = Prefix() + "_chunkfilepool_left";
-    chunkLeft_ = std::make_shared<bvar::PassiveStatus<uint32_t>>(
+    chunkLeft_ = new bvar::PassiveStatus<uint32_t>(
         chunkLeftPrefix, GetChunkLeftFunc, chunkfilePool);
 }
 
@@ -385,7 +385,7 @@ void ChunkServerMetric::MonitorTrash(Trash* trash) {
     }
 
     std::string chunkTrashedPrefix = Prefix() + "_chunk_trashed";
-    chunkTrashed_ = std::make_shared<bvar::PassiveStatus<uint32_t>>(
+    chunkTrashed_ = new bvar::PassiveStatus<uint32_t>(
         chunkTrashedPrefix, GetChunkTrashedFunc, trash);
 }
 

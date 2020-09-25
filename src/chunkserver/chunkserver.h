@@ -81,10 +81,10 @@ class ChunkServer {
 
     int GetChunkServerMetaFromLocal(const std::string &storeUri,
         const std::string &metaUri,
-        const std::shared_ptr<LocalFileSystem> &fs,
+        const LocalFileSystem* fs,
         ChunkServerMetadata *metadata);
 
-    int ReadChunkServerMeta(const std::shared_ptr<LocalFileSystem> &fs,
+    int ReadChunkServerMeta(const LocalFileSystem* fs,
         const std::string &metaUri, ChunkServerMetadata *metadata);
 
  private:

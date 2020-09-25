@@ -44,7 +44,7 @@ class DatastoreFileHelper {
         fs_ = Ext4FileSystemImpl::getInstance();
     }
 
-    explicit DatastoreFileHelper(std::shared_ptr<LocalFileSystem> fs)
+    explicit DatastoreFileHelper(LocalFileSystem* fs)
         : fs_(fs) {}
 
     virtual ~DatastoreFileHelper() {}
@@ -75,7 +75,7 @@ class DatastoreFileHelper {
     static bool IsChunkFile(const string& fileName);
 
  private:
-    std::shared_ptr<LocalFileSystem> fs_;
+    LocalFileSystem* fs_;
 };
 
 }  // namespace chunkserver

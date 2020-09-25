@@ -44,8 +44,8 @@ struct TrashOptions{
     // 扫描trash目录的时间间隔
     int scanPeriodSec;
 
-    std::shared_ptr<LocalFileSystem> localFileSystem;
-    std::shared_ptr<ChunkfilePool> chunkfilePool;
+    LocalFileSystem* localFileSystem;
+    ChunkfilePool* chunkfilePool;
 };
 
 class Trash {
@@ -141,10 +141,10 @@ class Trash {
     Atomic<uint32_t> chunkNum_;
 
     // 本地文件系统
-    std::shared_ptr<LocalFileSystem> localFileSystem_;
+    LocalFileSystem* localFileSystem_;
 
     // chunk池子
-    std::shared_ptr<ChunkfilePool> chunkfilePool_;
+    ChunkfilePool* chunkfilePool_;
 
     // 回收站全路径
     std::string trashPath_;

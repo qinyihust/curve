@@ -242,7 +242,7 @@ class LocalFsFactory {
      * @param deviceID: 设备的编号
      * @return 返回本地文件系统对象指针
      */
-    static std::shared_ptr<LocalFileSystem> CreateFs(FileSystemType type,
+    static LocalFileSystem* CreateFs(FileSystemType type,
                                                 const std::string& deviceID);
 };
 

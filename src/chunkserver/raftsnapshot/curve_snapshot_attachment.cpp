@@ -27,7 +27,7 @@ namespace curve {
 namespace chunkserver {
 
 CurveSnapshotAttachment::CurveSnapshotAttachment(
-    std::shared_ptr<LocalFileSystem> fs)
+    LocalFileSystem* fs)
     : fileHelper_(fs) {}
 
 void CurveSnapshotAttachment::list_attach_files(

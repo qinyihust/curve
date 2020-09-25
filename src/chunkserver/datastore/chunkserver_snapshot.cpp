@@ -104,8 +104,8 @@ SnapshotMetaPage& SnapshotMetaPage::operator =(
     return *this;
 }
 
-CSSnapshot::CSSnapshot(std::shared_ptr<LocalFileSystem> lfs,
-                       std::shared_ptr<ChunkfilePool> chunkfilePool,
+CSSnapshot::CSSnapshot(LocalFileSystem* lfs,
+                       ChunkfilePool* chunkfilePool,
                        const ChunkOptions& options)
     : fd_(-1),
       chunkId_(options.id),

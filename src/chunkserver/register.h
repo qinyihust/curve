@@ -48,7 +48,7 @@ struct RegisterOptions {
     int registerRetries;
     int registerTimeout;
 
-    std::shared_ptr<LocalFileSystem> fs;
+    LocalFileSystem* fs;
 };
 
 class Register {
