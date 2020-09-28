@@ -59,6 +59,7 @@ DEFINE_string(chunkServerStoreUri, "local://./0/", "chunkserver store uri");
 DEFINE_string(chunkServerMetaUri,
     "local://./0/chunkserver.dat", "chunnkserver meata uri");
 DEFINE_string(copySetUri, "local://./0/copysets", "copyset data uri");
+DEFINE_string(raftLogUri, "memory://./0/copysets", "raft log uri");
 DEFINE_string(raftSnapshotUri, "curve://./0/copysets", "raft snapshot uri");
 DEFINE_string(raftLogUri, "curve://./0/copysets", "raft log uri");
 DEFINE_string(recycleUri, "local://./0/recycler" , "recycle uri");
@@ -650,7 +651,7 @@ void ChunkServer::LoadConfigFromCmdline(common::Configuration *conf) {
 
     if (GetCommandLineFlagInfo("copySetUri", &info) && !info.is_default) {
         conf->SetStringValue("copyset.chunk_data_uri", FLAGS_copySetUri);
-        conf->SetStringValue("copyset.raft_log_uri", FLAGS_copySetUri);
+        conf->SetStringValue("copyset.raft_log_uri", FLAGS_raftLogUri);
         conf->SetStringValue("copyset.raft_snapshot_uri", FLAGS_copySetUri);
         conf->SetStringValue("copyset.raft_meta_uri", FLAGS_copySetUri);
     } else {
