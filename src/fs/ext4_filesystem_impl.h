@@ -75,7 +75,7 @@ class Ext4FileSystemImpl : public LocalFileSystem {
     int Read(int fd, char* buf, uint64_t offset, int length) override;
     int Write(int fd, const char *buf, uint64_t offset, int length) override;
     int WriteAsync(int fd, const char *buf, uint64_t offset,
-                   int length, void *done);
+                   int length, void *done) override;
     int Append(int fd, const char* buf, int length) override;
     int Fallocate(int fd, int op, uint64_t offset, int length) override;
     int Fstat(int fd, struct stat* info) override;

@@ -36,6 +36,7 @@ class MockLocalFileSystem : public LocalFileSystem {
  public:
     ~MockLocalFileSystem() {}
     MOCK_METHOD1(Init, int(const LocalFileSystemOption&));
+    MOCK_METHOD0(Uninit, int(void));
     MOCK_METHOD2(Statfs, int(const string&, struct FileSystemInfo*));
     MOCK_METHOD2(Open, int(const string&, int));
     MOCK_METHOD1(Close, int(int));
@@ -48,6 +49,7 @@ class MockLocalFileSystem : public LocalFileSystem {
     MOCK_METHOD4(Read, int(int, char*, uint64_t, int));
     MOCK_METHOD4(Write, int(int, const char*, uint64_t, int));
     MOCK_METHOD4(Write, int(int, butil::IOBuf, uint64_t, int));
+    MOCK_METHOD5(WriteAsync, int(int, const char*, uint64_t, int, void*));
     MOCK_METHOD3(Append, int(int, const char*, int));
     MOCK_METHOD4(Fallocate, int(int, int, uint64_t, int));
     MOCK_METHOD2(Fstat, int(int, struct stat*));

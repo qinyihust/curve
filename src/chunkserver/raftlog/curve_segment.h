@@ -54,6 +54,11 @@
 #include <string>
 #include "src/chunkserver/datastore/file_pool.h"
 #include "src/chunkserver/raftlog/segment.h"
+#include <bthread/butex.h>
+
+using ::curve::fs::LocalFileSystem;
+using ::curve::fs::FileSystemType;
+using ::curve::fs::LocalFsFactory;
 
 namespace curve {
 namespace chunkserver {
@@ -76,14 +81,21 @@ class BAIDU_CACHELINE_ALIGNMENT CurveSegment:
         _fd(-1), _is_open(true),
         _first_index(first_index), _last_index(first_index - 1),
         _checksum_type(checksum_type),
-        _meta_page_size(kWalFilePool->GetFilePoolOpt().metaPageSize) {}
+        _meta_page_size(kWalFilePool->GetFilePoolOpt().metaPageSize),
+        _lfs(LocalFsFactory::CreateFs(FileSystemType::EXT4, "")) {
+            if (FLAGS_enableWalDirectWrite)
+                _waiter = bthread::butex_create_checked<butil::atomic<int>>();
+        }
     CurveSegment(const std::string& path, const int64_t first_index,
             const int64_t last_index, int checksum_type)
         : _path(path), _meta(CurveSegmentMeta()),
         _fd(-1), _is_open(false),
         _first_index(first_index), _last_index(last_index),
         _checksum_type(checksum_type),
-        _meta_page_size(kWalFilePool->GetFilePoolOpt().metaPageSize) {
+        _meta_page_size(kWalFilePool->GetFilePoolOpt().metaPageSize),
+        _lfs(LocalFsFactory::CreateFs(FileSystemType::EXT4, "")) {
+            if (FLAGS_enableWalDirectWrite)
+                _waiter = bthread::butex_create_checked<butil::atomic<int>>();
     }
     ~CurveSegment() {
         if (_fd >= 0) {
@@ -166,6 +178,8 @@ class BAIDU_CACHELINE_ALIGNMENT CurveSegment:
     int _checksum_type;
     std::vector<std::pair<int64_t, int64_t> > _offset_and_term;
     uint32_t _meta_page_size;
+    std::shared_ptr<LocalFileSystem> _lfs;
+    butil::atomic<int>* _waiter;
 };
 
 }  // namespace chunkserver

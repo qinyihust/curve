@@ -43,8 +43,13 @@
 #include <butil/raw_pack.h>
 #include <braft/local_storage.pb.h>
 #include <braft/fsync.h>
+#include "src/fs/async_closure.h"
 #include "src/chunkserver/raftlog/curve_segment.h"
 #include "src/chunkserver/raftlog/define.h"
+#include "src/fs/async_closure.h"
+
+using curve::fs::ReqClosure;
+using curve::fs::AsyncClosure;
 
 namespace curve {
 namespace chunkserver {
@@ -369,6 +374,16 @@ int CurveSegment::_load_entry(off_t offset, EntryHeader* head,
     return 0;
 }
 
+void WakeOnIoDone(int ret, butil::atomic<int>* waiter) {
+    if (ret) {
+        LOG(FATAL) << "write failed";
+    }
+
+    while (!bthread::butex_wake(waiter)) {
+        LOG(ERROR) << "failed to wake any bthread";
+    }
+}
+
 int CurveSegment::append(const braft::LogEntry* entry) {
     if (BAIDU_UNLIKELY(!entry || !_is_open)) {
         return EINVAL;
@@ -433,13 +448,20 @@ int CurveSegment::append(const braft::LogEntry* entry) {
     packer.pack32(get_checksum(
                   _checksum_type, write_buf, kEntryHeaderSize - 4));
     if (FLAGS_enableWalDirectWrite) {
+        const int expected_val = _waiter->load(butil::memory_order_relaxed);
+
         data.copy_to(write_buf + kEntryHeaderSize, real_length);
-        int ret = ::pwrite(_direct_fd, write_buf, to_write, _meta.bytes);
-        free(write_buf);
-        if (ret != to_write) {
-            LOG(ERROR) << "Fail to write directly to fd=" << _direct_fd;
-            return -1;
+        auto done =
+            new AsyncClosure<decltype(WakeOnIoDone) *, butil::atomic<int>*>(
+                WakeOnIoDone, _waiter);
+        _lfs->WriteAsync(_direct_fd, write_buf, _meta.bytes, to_write, done);
+
+        if (bthread::butex_wait(_waiter, expected_val, NULL) < 0 
+            && errno != EWOULDBLOCK && errno != EINTR) {  // NOLINT
+            LOG(FATAL) << "write entry failed at butex_wait: " << berror();
         }
+
+        delete write_buf;
     } else {
         butil::IOBuf header;
         header.append(write_buf, kEntryHeaderSize);
@@ -478,7 +500,17 @@ int CurveSegment::_update_meta_page() {
     memset(metaPage, 0, _meta_page_size);
     memcpy(metaPage, &_meta.bytes, sizeof(_meta.bytes));
     if (FLAGS_enableWalDirectWrite) {
-        ret = ::pwrite(_direct_fd, metaPage, _meta_page_size, 0);
+        const int expected_val = _waiter->load(butil::memory_order_relaxed);
+        auto done =
+            new AsyncClosure<decltype(WakeOnIoDone) *, butil::atomic<int>*>(
+                WakeOnIoDone, _waiter);
+        _lfs->WriteAsync(_direct_fd, metaPage, 0, _meta_page_size, done);
+
+        if (bthread::butex_wait(_waiter, expected_val, NULL) < 0 
+            && errno != EWOULDBLOCK && errno != EINTR) {  // NOLINT
+            LOG(FATAL) << "write metapage failed at butex_wait: " << berror();
+        }
+        ret = _meta_page_size;
     } else {
         ret = ::pwrite(_fd, metaPage, _meta_page_size, 0);
     }
