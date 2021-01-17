@@ -66,7 +66,7 @@ namespace WatchDog {
         int oldstate;                                              \
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate); \
         LOG(ERROR) << x;                                           \
-        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);  \
+        pthread_setcancelstate(oldstate, nullptr);                 \
     } while (0)
 
 /*
@@ -78,7 +78,7 @@ namespace WatchDog {
         int oldstate;                                              \
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate); \
         LOG(INFO) << x;                                            \
-        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);  \
+        pthread_setcancelstate(oldstate, nullptr);                 \
     } while (0)
 
 /*
@@ -90,7 +90,7 @@ namespace WatchDog {
         int oldstate;                                              \
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate); \
         LOG_EVERY_N(INFO, n) << x;                                 \
-        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);  \
+        pthread_setcancelstate(oldstate, nullptr);                 \
     } while (0)
 
 /*
@@ -102,7 +102,7 @@ namespace WatchDog {
         int oldstate;                                              \
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate); \
         LOG_EVERY_N(ERROR, n) << x;                                \
-        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);  \
+        pthread_setcancelstate(oldstate, nullptr);                 \
     } while (0)
 
 using std::string;
@@ -138,6 +138,9 @@ struct ChunkServerInfo : public ServerInfo {
     string device;
     string storDir;
 };
+
+void FdCleaner(void* arg);
+
 class PipeGuard {
  public:
     PipeGuard() : fp_(nullptr) {}

@@ -53,11 +53,13 @@ static void* Watch(void* currDog) {
             if (dog->IsBad()) goto DEATH;
             dog->Eat();
         }
+
         /* keep eating in sleep */
         for (int i = 0; i < dog->config_.scanIntervalSec; i++) {
             sleep(1);
             dog->Eat();
         }
+
     }
 
 DEATH:
@@ -98,10 +100,16 @@ int Dog::Init() {
 }
 
 int DogKeeper::Run() {
+#if 0
     while (true) {
+#endif
+    for(int i = 0; i < 5000; ++i) {
         AssignDogForServer();
         FeedingDogs();
+#if 0
         sleep(conf_.opTimeoutSec);
+#endif
+	    usleep(10000);
         ForceKillServer();
     }
 }
@@ -179,25 +187,31 @@ void DogKeeper::FeedingDogs() {
         dog->Feed();
 
         /* kill sick dogs */
+#if 0
         if (dog->IsBad()) {
+#endif
             int pid = iter->first;
             KillServer(pid, iter->second);
             iter = dogs_.erase(iter);
             SAFE_LOG_ERROR("server " << pid
                                      << " and its dog is killed, totally "
                                      << dogs_.size() << " dogs");
-        } else {
+#if 0
+	} else {
             ++iter;
         }
+#endif
     }
 }
 
 void DogKeeper::KillServer(int pid, std::shared_ptr<Dog> dog) {
+#if 0
     /* kill server process and record in kill list */
     kill(pid, SIGTERM);
     time_t killTime;
     time(&killTime);
     killList_.emplace(pid, killTime);
+#endif
 
     /* kill dog thread */
     dog->SetDead();

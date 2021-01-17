@@ -180,5 +180,18 @@ int Exec(const string cmd, string* output) {
     return 0;
 }
 
+void FdCleaner(void *arg) {
+    int *fd = static_cast<int *>(arg);
+    if (*fd >= 0) {
+        close(*fd);
+        SAFE_LOG_INFO("closefile " << *fd);
+        *fd = -1;
+    } else {
+        SAFE_LOG_INFO("invalidfile " << *fd);
+    }
+
+    return;
+}
+
 }  // namespace WatchDog
 }  // namespace Curve

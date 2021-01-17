@@ -76,7 +76,14 @@ int DiskSmartWatcher::Run() {
 
     {
         /* test device open */
-        FdGuard disk(open(info->device.c_str(), O_RDWR));
+        int disk = -1;
+        pthread_cleanup_push(FdCleaner, &disk);
+        SAFE_LOG_INFO("preparefile " << disk);
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
+        disk = open(info->device.c_str(), O_RDWR);
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+        SAFE_LOG_INFO("openfile " << disk);
+        pthread_testcancel();
         if (disk < 0) {
             SAFE_LOG_ERROR("SMART check failed for "
                            << getServerName(info->serverType) << " "
@@ -84,6 +91,9 @@ int DiskSmartWatcher::Run() {
                            << info->device);
             return -1;
         }
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
+        pthread_cleanup_pop(1);
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
     }
 
     {
@@ -207,42 +217,54 @@ int FileOpWatcher::Run() {
     }
 
     /* create test file */
-    FdGuard fd(open(testPath.c_str(), O_CREAT | O_RDWR | O_NOATIME | O_DSYNC));
+    string writeBuf(WATCHDOG_WRITE_BUF_LEN, 'R');
+    char readBuf[WATCHDOG_WRITE_BUF_LEN] = {0};
+    int ret = 0;
+    int fd = -1;
+    SAFE_LOG_INFO("preparefile " << fd);
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
+    fd = open(testPath.c_str(), O_CREAT | O_RDWR | O_NOATIME | O_DSYNC);
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+    SAFE_LOG_INFO("openfile " << fd);
     if (fd < 0) {
         SAFE_LOG_ERROR("Failed to create test file: " << testPath << ", "
                                                       << strerror(errno));
-        return -1;
+        ret = -1;
+        goto OUT;
     }
 
     /* write file */
-    string writeBuf(WATCHDOG_WRITE_BUF_LEN, 'R');
-    int ret = WriteData(fd, writeBuf.c_str(), 0, WATCHDOG_WRITE_BUF_LEN);
+    ret = WriteData(fd, writeBuf.c_str(), 0, WATCHDOG_WRITE_BUF_LEN);
     if (ret < 0) {
         SAFE_LOG_ERROR("Failed to write test file: " << testPath);
-        return -1;
+        ret = -1;
+        goto OUT;
     }
 
     /* read file */
-    char readBuf[WATCHDOG_WRITE_BUF_LEN] = {0};
     ret = ReadData(fd, readBuf, 0, WATCHDOG_WRITE_BUF_LEN);
     if (ret < 0) {
         SAFE_LOG_ERROR("Failed to read test file: " << testPath);
-        return -1;
+        ret = -1;
+        goto OUT;
     }
-
     if (memcmp(writeBuf.c_str(), readBuf, WATCHDOG_WRITE_BUF_LEN)) {
         SAFE_LOG_ERROR("Read invalid content from " << testPath);
-        return -1;
+        ret = -1;
+        goto OUT;
     }
 
     if (remove(testPath.c_str()) < 0) {
         SAFE_LOG_ERROR("Failed to remove test file: " << testPath << ", "
                                                       << strerror(errno));
-        return -1;
+        ret = -1;
+        goto OUT;
     }
 
+OUT:
+    close(fd);
     /* all file test passed */
-    return 0;
+    return ret;
 }
 
 }  // namespace WatchDog
